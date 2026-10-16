@@ -158,6 +158,10 @@ export const register: Register = (on, options) => {
     return { id: a.id, name, outfit, task }
   }
 
+  // Crabs that have already left. The engine keeps a finished agent in its list for a while,
+  // so without this a crab would come back each time it was cleared away.
+  const gone = new Set<string>()
+
   on('session.start', async ($, e, next) => {
     const poll = async () => {
       try {
@@ -171,6 +175,11 @@ export const register: Register = (on, options) => {
           seen.add(a.id)
           const state: Crab['state'] =
             a.status === 'completed' ? 'done' : a.status === 'failed' || a.status === 'killed' ? 'failed' : 'running'
+          if (gone.has(a.id)) {
+            // Only an agent that runs again (resumed) brings its crab back.
+            if (state !== 'running') continue
+            gone.delete(a.id)
+          }
           const old = prev[a.id]
           const base: Crab = old ?? { ...describe(a), startedAt: now, state }
           out[a.id] = { ...base, state, endedAt: state === 'running' ? undefined : (old?.endedAt ?? now) }
@@ -180,7 +189,10 @@ export const register: Register = (on, options) => {
           if (!seen.has(id)) out[id] = c.state === 'running' ? { ...c, state: 'done', endedAt: now } : c
         }
         for (const [id, c] of Object.entries(out)) {
-          if (c.endedAt !== undefined && now - c.endedAt > (c.state === 'failed' ? lingerMs * 3 : lingerMs)) delete out[id]
+          if (c.endedAt !== undefined && now - c.endedAt > (c.state === 'failed' ? lingerMs * 3 : lingerMs)) {
+            delete out[id]
+            gone.add(id)
+          }
         }
         await update($, crabsAtom, p => (JSON.stringify(p) === JSON.stringify(out) ? p : out))
         // Once a second while there are crabs, so claws move and the timers count.
