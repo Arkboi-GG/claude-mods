@@ -1,0 +1,10 @@
+{
+  "name": "preflight",
+  "version": "0.1.0",
+  "description": "A live pre-commit checklist above the prompt: re-runs your typecheck, lint or any command after Claude edits files.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "checks": { "type": "string", "title": "Checks", "description": "Semicolon-separated name=command pairs, e.g. types=npx tsc -b;lint=npm run lint. Empty: auto-detect (tsc if tsconfig.json exists, npm run lint if defined).", "default": "" },
+    "delaySeconds": { "type": "number", "title": "Wait after last edit (s)", "description": "How long to wait after the last file edit before running the checks.", "default": 8 }
+  }
+}

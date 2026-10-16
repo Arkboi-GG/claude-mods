@@ -64,8 +64,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
     const list = await read($, steps)
-    if (e.props.hasSurvey || list.length === 0) return next(e)
+    if (e.props.hasSurvey || list.length === 0) return below
 
     const { Box, Text, Svg } = $.ui.resolve(e)
     const done = list.filter(s => s.status === 'completed').length
@@ -88,7 +89,7 @@ export const register: Register = on => {
       (fillW > 0 ? `<rect width="${fillW}" height="${H}" rx="${H / 2}" fill="url(#g)"/>` : '') +
       `</g><text x="${W / 2}" y="${H / 2 + 4.5}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#ffffff">${label}</text></svg>`
 
-    return (
+    const row = (
       <Box paddingX={1} alignItems="center">
         <Box flexShrink={0}>
           <Text color="#a855f7">● </Text>
@@ -103,5 +104,6 @@ export const register: Register = on => {
         <Text color={ORANGE}>×{list.length}</Text>
       </Box>
     )
+    return below ? <Box flexDirection="column">{below}{row}</Box> : row
   })
 }

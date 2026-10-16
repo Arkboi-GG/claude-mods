@@ -1,7 +1,33 @@
 {
   "name": "claude-mods",
-  "owner": { "name": "Panos" },
+  "owner": {
+    "name": "Panos"
+  },
   "plugins": [
-    { "name": "task-progress", "source": "./mods/task-progress", "description": "A gradient progress bar above the prompt showing how far Claude is through the current task's plan." }
+    {
+      "name": "task-progress",
+      "source": "./mods/task-progress",
+      "description": "A gradient progress bar above the prompt showing how far Claude is through the current task's plan."
+    },
+    {
+      "name": "repo-status",
+      "source": "./mods/repo-status",
+      "description": "Branch, ahead/behind, changed files and PR check state above the prompt."
+    },
+    {
+      "name": "stack-health",
+      "source": "./mods/stack-health",
+      "description": "Status dots for Docker Compose services and local ports."
+    },
+    {
+      "name": "preflight",
+      "source": "./mods/preflight",
+      "description": "A live pre-commit checklist that re-runs typecheck/lint after edits."
+    },
+    {
+      "name": "env-guard",
+      "source": "./mods/env-guard",
+      "description": "A LOCAL/PROD badge that turns red when tool calls touch production."
+    }
   ]
 }
