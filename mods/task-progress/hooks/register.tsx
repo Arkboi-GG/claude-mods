@@ -118,9 +118,43 @@ async function refreshUsage($: any) {
   }
 }
 
+// The model's own way to show steps where the host has no task list tool (TodoWrite, update_plan): the mod declares one
+// tool and serves it. mcp__task-progress__update_steps takes the whole list each time, like TodoWrite.
+const STEPS_TOOL = 'update_steps'
+const STEPS_TOOL_FULL = 'mcp__task-progress__update_steps'
+const STEPS_TOOL_DESCRIPTION =
+  'Shows the person your progress as a bar above the prompt. At the start of any task that takes several steps, call it with the full list of steps (3 to 8, short, imperative), the first one in_progress and the rest pending. Call it again, with the whole list, each time a step finishes or the next one starts, until every step is completed. Skip it for a one-step answer or a quick question.'
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     $.ui.toast('task-progress loaded')
+    try {
+      await $.tool.register({
+        name: STEPS_TOOL,
+        description: STEPS_TOOL_DESCRIPTION,
+        isDeferred: false,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            steps: {
+              type: 'array',
+              description: 'The whole list of steps, in order. Replaces the list shown now.',
+              items: {
+                type: 'object',
+                properties: {
+                  content: { type: 'string', description: 'The step, short and imperative.' },
+                  status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
+                },
+                required: ['content', 'status'],
+              },
+            },
+          },
+          required: ['steps'],
+        },
+      })
+    } catch {
+      // A host without tool registration still gets the bar from TodoWrite or update_plan.
+    }
     await refreshUsage($)
     $.clock.every(60000, () => refreshUsage($))
     // Once a second while a step runs, so its block keeps filling.
@@ -160,6 +194,18 @@ export const register: Register = on => {
       await update($, steps, prev => prev.map(s => ({ content: s.content, status: 'completed' as const })))
     }
     return next(e)
+  })
+
+  on('tool.call', { tool: STEPS_TOOL_FULL }, async ($, e, next) => {
+    const raw = (e as { steps?: Array<{ content?: unknown; status?: unknown }> }).steps
+    if (!Array.isArray(raw)) return { deny: 'steps must be a list of { content, status }.' }
+    const now = await $.clock.now()
+    const list: Step[] = raw.map(i => ({
+      content: String(i.content ?? ''),
+      status: i.status === 'in_progress' || i.status === 'completed' ? i.status : 'pending',
+    }))
+    await update($, steps, prev => stamp(prev, list, now))
+    return { result: 'Steps updated.' }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
