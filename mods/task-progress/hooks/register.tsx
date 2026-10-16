@@ -108,6 +108,7 @@ async function refreshUsage($: any) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    $.ui.toast('task-progress loaded')
     await refreshUsage($)
     $.clock.every(60000, () => refreshUsage($))
     return next(e)
@@ -146,8 +147,15 @@ export const register: Register = on => {
       // Idle: the usage rings, with a Compact button on the right.
       const u = await read($, usage)
       const meters = [...(u.context === null ? [] : [{ label: 'context', percent: u.context }]), ...u.limits]
-      if (meters.length === 0) return below
-      const { Box, Button, Svg } = $.ui.resolve(e)
+      const { Box, Button, Svg, Text } = $.ui.resolve(e)
+      if (meters.length === 0) {
+        const wait = (
+          <Box paddingX={1}>
+            <Text dimColor>usage: waiting for the first reading</Text>
+          </Box>
+        )
+        return below ? <Box flexDirection="column">{wait}{below}</Box> : wait
+      }
       const rings = ringsSvg(meters)
       const idle = (
         <Box paddingX={1} justifyContent="space-between" alignItems="center">
