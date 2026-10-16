@@ -5,6 +5,8 @@ import type { Step, Usage } from '../types'
 
 const steps = atom({ plugin: 'task-progress', key: 'steps' } as const, [] as Step[])
 
+const stoppedAt = atom({ plugin: 'task-progress', key: 'stoppedAt' } as const, 0)
+const tick = atom({ plugin: 'task-progress', key: 'tick' } as const, 0)
 const usage = atom({ plugin: 'task-progress', key: 'usage' } as const, { context: null, limits: [] } as Usage)
 
 const ORANGE = '#f97316'
@@ -24,6 +26,14 @@ const grad = (t: number) => {
   const f = x - i
   return hex(STOPS[i].map((v, k) => v + (STOPS[i + 1][k] - v) * f))
 }
+
+// Marks when each step started, so its block can fill while it runs.
+const stamp = (prev: Step[], next: Step[], now: number): Step[] =>
+  next.map((s, i) => {
+    if (s.status !== 'in_progress') return { content: s.content, status: s.status }
+    const was = prev[i]
+    return { content: s.content, status: s.status, startedAt: was?.status === 'in_progress' && was.startedAt ? was.startedAt : now }
+  })
 
 // Applies one update_plan call (the desktop app's task list) to the steps.
 const applyPlan = (prev: Step[], e: Record<string, unknown>): Step[] => {
@@ -111,27 +121,41 @@ export const register: Register = on => {
     $.ui.toast('task-progress loaded')
     await refreshUsage($)
     $.clock.every(60000, () => refreshUsage($))
+    // Once a second while a step runs, so its block keeps filling.
+    $.clock.every(1000, async () => {
+      const list = await read($, steps)
+      if (list.some(st => st.status === 'in_progress') && (await read($, stoppedAt)) === 0) await update($, tick, n => n + 1)
+    })
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     await refreshUsage($)
+    const list = await read($, steps)
+    const isOpen = list.length > 0 && list.some(st => st.status !== 'completed')
+    await update($, stoppedAt, () => 0)
+    if (isOpen) {
+      const at = await $.clock.now()
+      await update($, stoppedAt, () => at)
+    }
     return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
     await update($, steps, () => [])
+    await update($, stoppedAt, () => 0)
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
+    const now = await $.clock.now()
     if (e.tool === 'TodoWrite') {
       const todos = (e as { todos?: Step[] }).todos ?? []
-      await update($, steps, () => todos.map(t => ({ content: t.content, status: t.status })))
+      await update($, steps, prev => stamp(prev, todos, now))
     } else if (e.tool === 'mcp__ccd_turn__update_plan') {
-      await update($, steps, prev => applyPlan(prev, e as Record<string, unknown>))
+      await update($, steps, prev => stamp(prev, applyPlan(prev, e as Record<string, unknown>), now))
     } else if (e.tool === 'mcp__ccd_turn__wrap_up') {
-      await update($, steps, prev => prev.map(s => ({ ...s, status: 'completed' as const })))
+      await update($, steps, prev => prev.map(s => ({ content: s.content, status: 'completed' as const })))
     }
     return next(e)
   })
@@ -143,7 +167,11 @@ export const register: Register = on => {
     // keeping just the dev row; when the turn ends they come back.
     if (e.props.hasSurvey) return below
 
-    if (list.length === 0 || !e.props.isWorking) {
+    const isOpen = list.length > 0 && list.some(st => st.status !== 'completed')
+    // Paused: the turn ended with steps still open, so the bar stays, in amber.
+    const isPaused = !e.props.isWorking && isOpen
+
+    if (list.length === 0 || (!e.props.isWorking && !isPaused)) {
       // Idle: the usage rings, with a Compact button on the right.
       const u = await read($, usage)
       const meters = [...(u.context === null ? [] : [{ label: 'context', percent: u.context }]), ...u.limits]
@@ -167,36 +195,62 @@ export const register: Register = on => {
     }
 
     const { Box, Text, Svg } = $.ui.resolve(e)
+    await read($, tick)
+    const stopped = await read($, stoppedAt)
+    const now = stopped || (await $.clock.now())
     const done = list.filter(s => s.status === 'completed').length
-    const current = list.find(s => s.status === 'in_progress')
     const pct = Math.round((done / list.length) * 100)
-    const finished = done === list.length
-
-    const title = finished ? 'Done' : (current?.content ?? 'Task')
-    const shown = title.length > 30 ? title.slice(0, 29) + '…' : title
     const label = `Tasks ${done}/${list.length}`
-    // The bar takes what the title leaves, so the row never wraps.
-    const W = Math.max(160, 700 - 8 * shown.length)
+
+    // One block per step, a thin gap between them. A running step fills toward 90%
+    // as time passes, a finished one is green, a paused one amber.
+    const W = 640
     const H = 22
-    const fillW = done === 0 ? 0 : Math.max(H, Math.round((done / list.length) * W))
+    const SEP = 3
+    const n = list.length
+    const bw = (W - SEP * (n - 1)) / n
+    const fit = (t: string) => {
+      const max = Math.max(3, Math.floor(bw / 7.2) - 1)
+      return t.length > max ? t.slice(0, max - 1) + '…' : t
+    }
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    let blocks = ''
+    list.forEach((st, i) => {
+      const x = i * (bw + SEP)
+      blocks += `<rect x="${x}" width="${bw}" height="${H}" fill="${TRACK}"/>`
+      let text = fit(st.content)
+      let color = '#9ca3af'
+      if (st.status === 'completed') {
+        blocks += `<rect x="${x}" width="${bw}" height="${H}" fill="#22c55e"/>`
+        text = 'Completed'
+        color = '#ffffff'
+      } else if (st.status === 'in_progress') {
+        const secs = Math.max(0, (now - (st.startedAt ?? now)) / 1000)
+        const frac = 0.9 * (1 - Math.exp(-secs / 25))
+        const fill = isPaused ? '#f59e0b' : `url(#g${i})`
+        blocks +=
+          `<defs><linearGradient id="g${i}" x1="0" x2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="0.55" stop-color="#a855f7"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs>` +
+          `<rect x="${x}" width="${Math.max(4, bw * frac)}" height="${H}" fill="${fill}"/>`
+        text = isPaused ? 'Paused' : 'In Progress'
+        color = '#ffffff'
+      }
+      blocks += `<text x="${x + bw / 2}" y="${H / 2 + 4.2}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="${color}">${esc(text)}</text>`
+    })
     const source =
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">` +
-      `<defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="0.55" stop-color="#a855f7"/><stop offset="1" stop-color="#f472b6"/></linearGradient>` +
-      `<clipPath id="c"><rect width="${W}" height="${H}" rx="${H / 2}"/></clipPath></defs>` +
-      `<g clip-path="url(#c)"><rect width="${W}" height="${H}" fill="${TRACK}"/>` +
-      (fillW > 0 ? `<rect width="${fillW}" height="${H}" rx="${H / 2}" fill="url(#g)"/>` : '') +
-      `</g><text x="${W / 2}" y="${H / 2 + 4.5}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#ffffff">${label}</text></svg>`
+      `<defs><clipPath id="c"><rect width="${W}" height="${H}" rx="${H / 2}"/></clipPath></defs>` +
+      `<g clip-path="url(#c)">${blocks}</g></svg>`
 
     const row = (
       <Box paddingX={1} alignItems="center">
         <Box flexShrink={0}>
-          <Text color="#a855f7">● </Text>
+          <Text color={isPaused ? '#f59e0b' : '#a855f7'}>● </Text>
         </Box>
         <Box flexShrink={0}>
-          <Text bold wrap="truncate">{shown}  </Text>
+          <Text bold>{label}  </Text>
         </Box>
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
-          <Svg source={source} alt={`${label}, ${pct}%`} />
+          <Svg source={source} alt={`${label}, ${pct}%${isPaused ? ', paused' : ''}`} />
         </Box>
         <Text dimColor>  {pct}%  </Text>
         <Text color={ORANGE}>×{list.length}</Text>
