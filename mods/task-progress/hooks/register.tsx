@@ -190,14 +190,12 @@ export const register: Register = on => {
           <Svg source={rings.source} alt={rings.alt} />
           <Button key="compact" label="Compact" onPress={async () => {
             $.ui.toast('Compacting…')
+            // Runs as if /compact was typed, once the session is idle. $.session.compact()
+            // is not available in every host (desktop/SDK sessions reject it).
             try {
-              const r = await $.session.compact()
-              if ('skip' in r && r.skip) $.ui.toast(`Compact skipped: ${r.skip}`)
-              else $.ui.toast(`Compact resolved: ${r.messages?.length ?? 0} messages kept`)
+              await $.command.run({ command: 'compact' })
             } catch (err) {
-              $.ui.toast(`Compact rejected: ${String((err as Error)?.message ?? err)}`)
-              // Direct compaction refused (e.g. a turn is running): queue the slash command instead.
-              void $.prompt.submit({ text: '/compact', asUser: true })
+              $.ui.toast(`Compact failed: ${String((err as Error)?.message ?? err)}`)
             }
           }} />
         </Box>
