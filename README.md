@@ -12,7 +12,8 @@ The bars stack above the prompt, so you can install any combination.
 
 ## Mods
 
-- **task-progress**: a rounded, gradient progress bar above the prompt showing how far Claude is through the current task (`Tasks 2/5`, percentage, current step). It reads the task list Claude keeps while working, so it appears for multi-step tasks.
+- **task-progress**: the band above the prompt. While Claude works on a multi-step task it shows one block per step: the running step fills as "In Progress", finished steps turn green "Completed", and a turn that stops with steps still open turns amber "Paused". When Claude is idle it shows usage rings (context, 5-hour and 7-day limits) with a Compact button. It reads the task list Claude keeps while working, so it appears for multi-step tasks.
+  If you also use the `skins` mod, run `/skin band off` once so its own usage band doesn't show twice.
 - **repo-status**: branch, ahead/behind, changed-file count and the open PR's check state (needs `git`; `gh` is optional).
 - **stack-health**: status dots for your Docker Compose services and any local ports you list (`web=5173,api=3000`).
 - **preflight**: a live pre-commit checklist. After Claude edits files it re-runs your typecheck/lint (auto-detected, or set `checks`) and shows pass/fail with an error count.
