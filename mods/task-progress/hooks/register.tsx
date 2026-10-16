@@ -45,6 +45,17 @@ const applyPlan = (prev: Step[], e: Record<string, unknown>): Step[] => {
   return next
 }
 
+// The dev row the sibling mods build (key 'devrow'), found anywhere in what is beneath.
+function findDevRow(node: any): any {
+  if (!node || typeof node !== 'object') return null
+  if (node.props?.key === 'devrow') return node
+  for (const kid of node.children ?? []) {
+    const hit = findDevRow(kid)
+    if (hit) return hit
+  }
+  return null
+}
+
 export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     await update($, steps, () => [])
@@ -66,7 +77,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const list = await read($, steps)
-    if (e.props.hasSurvey || list.length === 0) return below
+    // Only while Claude works: then the bar stands in for the other stats bands,
+    // keeping just the dev row; when the turn ends they come back.
+    if (e.props.hasSurvey || list.length === 0 || !e.props.isWorking) return below
 
     const { Box, Text, Svg } = $.ui.resolve(e)
     const done = list.filter(s => s.status === 'completed').length
@@ -104,6 +117,7 @@ export const register: Register = on => {
         <Text color={ORANGE}>×{list.length}</Text>
       </Box>
     )
-    return below ? <Box flexDirection="column">{below}{row}</Box> : row
+    const devrow = findDevRow(below)
+    return devrow ? <Box flexDirection="column">{row}{devrow}</Box> : row
   })
 }
