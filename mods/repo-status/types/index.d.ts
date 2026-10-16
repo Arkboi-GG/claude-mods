@@ -4,6 +4,7 @@ export type Repo = {
   behind: number
   changed: number
   pr: string
+  prLong: string
 }
 
 declare module 'claude-code' {

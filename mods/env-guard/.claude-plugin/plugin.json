@@ -1,10 +1,10 @@
 {
   "name": "env-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A green/red environment badge above the prompt that turns red when Claude's tool calls touch anything that looks like production.",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "patterns": { "type": "string", "title": "Production patterns", "description": "Comma-separated, case-insensitive regular expressions that mark a tool call as production, e.g. prod,prod\\.example\\.com,eu-west-1.", "default": "prod,production" },
+    "patterns": { "type": "string", "title": "Production patterns", "description": "Comma-separated, case-insensitive regular expressions that mark a tool call as production, e.g. prod,prod\\.example\\.com,eu-west-1.", "default": "\\bprod\\b,\\bproduction\\b" },
     "holdMinutes": { "type": "number", "title": "Stay red (minutes)", "description": "How long the badge stays red after the last production touch.", "default": 10 }
   }
 }
