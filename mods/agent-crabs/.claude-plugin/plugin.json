@@ -1,0 +1,11 @@
+{
+  "name": "agent-crabs",
+  "version": "0.1.0",
+  "description": "A pixel-art crab for every running subagent, dressed for its role, showing what it is working on.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "outfits": { "type": "string", "title": "Outfits", "description": "Comma-separated agent=outfit pairs, e.g. Olivia=beret,Simon=hardhat. Outfits: beret, hoodie, postman, grad, headset, magnifier, megaphone, hardhat, explorer, plain.", "default": "" },
+    "lingerSeconds": { "type": "number", "title": "Linger (seconds)", "description": "How long a finished crab stays on screen before leaving. A failed one stays three times as long.", "default": 6 },
+    "maxShown": { "type": "number", "title": "Most crabs shown", "description": "Crabs shown at once; the rest are counted as +N more.", "default": 4 }
+  }
+}

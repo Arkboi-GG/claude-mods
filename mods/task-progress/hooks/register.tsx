@@ -57,12 +57,12 @@ const applyPlan = (prev: Step[], e: Record<string, unknown>): Step[] => {
   return next
 }
 
-// The dev row the sibling mods build (key 'devrow'), found anywhere in what is beneath.
-function findDevRow(node: any): any {
+// A sibling mod's element by key ('devrow', 'agent-crabs'), found anywhere in what is beneath.
+function findKeyed(node: any, key: string): any {
   if (!node || typeof node !== 'object') return null
-  if (node.props?.key === 'devrow') return node
+  if (node.props?.key === key) return node
   for (const kid of node.children ?? []) {
-    const hit = findDevRow(kid)
+    const hit = findKeyed(kid, key)
     if (hit) return hit
   }
   return null
@@ -272,7 +272,9 @@ export const register: Register = on => {
         <Text color={ORANGE}>×{list.length}</Text>
       </Box>
     )
-    const devrow = findDevRow(below)
-    return devrow ? <Box flexDirection="column">{row}{devrow}</Box> : row
+    // Keeps the dev row and the agent crabs (agent-crabs mod) while the other bands step aside.
+    const devrow = findKeyed(below, 'devrow')
+    const crabs = findKeyed(below, 'agent-crabs')
+    return devrow || crabs ? <Box flexDirection="column">{crabs}{row}{devrow}</Box> : row
   })
 }

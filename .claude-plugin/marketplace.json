@@ -28,6 +28,11 @@
       "name": "env-guard",
       "source": "./mods/env-guard",
       "description": "A LOCAL/PROD badge that turns red when tool calls touch production."
+    },
+    {
+      "name": "agent-crabs",
+      "source": "./mods/agent-crabs",
+      "description": "A pixel-art crab for every running subagent, dressed for its role, showing what it is working on."
     }
   ]
 }

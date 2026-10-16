@@ -18,3 +18,4 @@ The bars stack above the prompt, so you can install any combination.
 - **stack-health**: status dots for your Docker Compose services and any local ports you list (`web=5173,api=3000`).
 - **preflight**: a live pre-commit checklist. After Claude edits files it re-runs your typecheck/lint (auto-detected, or set `checks`) and shows pass/fail with an error count.
 - **env-guard**: a green `LOCAL` badge that turns red `PROD` when a tool call matches your production patterns, and toasts when it happens.
+- **agent-crabs**: a pixel-art crab for every running subagent, dressed for its role (beret, hard hat, postman cap and more), with the agent's name, what it is working on and a timer. Finished crabs cheer and leave after a few seconds; failed ones turn grey. Name an agent by starting the Agent call's description with `Name: `, e.g. `Olivia: rewrite welcome email`; map names to outfits with the `outfits` option.
