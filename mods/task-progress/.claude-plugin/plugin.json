@@ -1,1 +1,1 @@
-{ "name": "task-progress", "version": "0.4.5", "description": "A bar above the prompt: gradient task progress while Claude works, usage rings (context, 5h, 7d) while idle.", "types": "./types/index.d.ts" }
+{ "name": "task-progress", "version": "0.4.6", "description": "A bar above the prompt: gradient task progress while Claude works, usage rings (context, 5h, 7d) while idle.", "types": "./types/index.d.ts" }

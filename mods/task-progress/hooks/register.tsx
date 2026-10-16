@@ -189,7 +189,6 @@ export const register: Register = on => {
         <Box paddingX={1} justifyContent="space-between" alignItems="center" marginBottom={1}>
           <Svg source={rings.source} alt={rings.alt} />
           <Button key="compact" label="Compact" onPress={async () => {
-            $.ui.toast('Compacting…')
             // Runs as if /compact was typed, once the session is idle. $.session.compact()
             // is not available in every host (desktop/SDK sessions reject it).
             try {
