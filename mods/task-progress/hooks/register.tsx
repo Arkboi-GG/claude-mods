@@ -188,7 +188,15 @@ export const register: Register = on => {
       const idle = (
         <Box paddingX={1} justifyContent="space-between" alignItems="center" marginBottom={1}>
           <Svg source={rings.source} alt={rings.alt} />
-          <Button key="compact" label="Compact" onPress={() => $.session.compact()} />
+          <Button key="compact" label="Compact" onPress={async () => {
+            try {
+              const r = await $.session.compact()
+              if ('skip' in r && r.skip) $.ui.toast(`Compact skipped: ${r.skip}`)
+            } catch {
+              // Direct compaction refused (e.g. a turn is running): queue the slash command instead.
+              void $.prompt.submit({ text: '/compact', asUser: true })
+            }
+          }} />
         </Box>
       )
       return below ? <Box flexDirection="column">{idle}{below}</Box> : idle
