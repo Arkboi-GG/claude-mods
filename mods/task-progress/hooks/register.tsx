@@ -186,12 +186,12 @@ export const register: Register = on => {
       }
       const rings = ringsSvg(meters)
       const idle = (
-        <Box paddingX={1} justifyContent="space-between" alignItems="center">
+        <Box paddingX={1} justifyContent="space-between" alignItems="center" marginBottom={1}>
           <Svg source={rings.source} alt={rings.alt} />
           <Button key="compact" label="Compact" onPress={() => $.session.compact()} />
         </Box>
       )
-      return below ? <Box flexDirection="column" rowGap={1}>{idle}{below}</Box> : idle
+      return below ? <Box flexDirection="column">{idle}{below}</Box> : idle
     }
 
     const { Box, Text, Svg } = $.ui.resolve(e)
@@ -242,7 +242,7 @@ export const register: Register = on => {
       `<g clip-path="url(#c)">${blocks}</g></svg>`
 
     const row = (
-      <Box paddingX={1} alignItems="center">
+      <Box paddingX={1} alignItems="center" marginBottom={1}>
         <Box flexShrink={0}>
           <Text color={isPaused ? '#f59e0b' : '#a855f7'}>● </Text>
         </Box>
@@ -257,6 +257,6 @@ export const register: Register = on => {
       </Box>
     )
     const devrow = findDevRow(below)
-    return devrow ? <Box flexDirection="column" rowGap={1}>{row}{devrow}</Box> : row
+    return devrow ? <Box flexDirection="column">{row}{devrow}</Box> : row
   })
 }
