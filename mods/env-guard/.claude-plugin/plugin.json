@@ -1,6 +1,6 @@
 {
   "name": "env-guard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A green/red environment badge above the prompt that turns red when Claude's tool calls touch anything that looks like production.",
   "types": "./types/index.d.ts",
   "userConfig": {

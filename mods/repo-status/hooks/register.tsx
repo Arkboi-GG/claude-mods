@@ -11,7 +11,7 @@ const WIDE = 110
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
 function addZone(below: any, zone: any, order: number): any {
-  const tagged = { ...zone, props: { ...zone.props, key: `zone-${order}` } }
+  const tagged = { ...zone, props: { ...zone.props, key: `zone-${order}`, flexShrink: 0 } }
   const byKey = (a: any, b: any) => String(a?.props?.key).localeCompare(String(b?.props?.key))
   const merge = (node: any): any => {
     if (!node || typeof node !== 'object') return null
@@ -27,7 +27,7 @@ function addZone(below: any, zone: any, order: number): any {
   if (merged) return merged
   const row = {
     type: 'Box',
-    props: { key: 'devrow', paddingX: 1, justifyContent: 'space-between', gap: 3 },
+    props: { key: 'devrow', paddingX: 1, justifyContent: 'space-between', flexWrap: 'wrap', columnGap: 3 },
     children: [tagged],
   }
   return {

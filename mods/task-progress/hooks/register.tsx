@@ -77,7 +77,7 @@ function limitLabel(kind: string): string {
 }
 
 // The idle band: a ring per meter (context, 5-hour and 7-day limits), drawn as one SVG.
-function ringsSvg(meters: Array<{ label: string; percent: number }>) {
+function ringsSvg(meters: Array<{ label: string; percent: number }>, narrow: boolean) {
   const R = 11
   const C = 2 * Math.PI * R
   let x = 0
@@ -85,15 +85,17 @@ function ringsSvg(meters: Array<{ label: string; percent: number }>) {
   const alt: string[] = []
   for (const m of meters) {
     const pct = Math.max(0, Math.min(100, Math.round(m.percent)))
-    const text = `${pct}% ${m.label}`
-    const w = Math.ceil(R * 2 + 14 + text.length * 7.6 + 26)
+    // Narrow chat: the context label shortens and the gap between rings tightens.
+    const label = narrow && m.label === 'context' ? 'ctx' : m.label
+    const text = `${pct}% ${label}`
+    const w = Math.ceil(R * 2 + 14 + text.length * 7.6 + (narrow ? 8 : 26))
     const cx = x + R + 4
     const color = pct >= 95 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#a78bfa'
     const dash = (C * pct) / 100
     body +=
       `<circle cx="${cx}" cy="15" r="${R}" fill="none" stroke="#8b8b9b" stroke-opacity=".25" stroke-width="3"/>` +
       `<circle cx="${cx}" cy="15" r="${R}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${dash} ${C}" transform="rotate(-90 ${cx} 15)"/>` +
-      `<text x="${cx + R + 8}" y="19.5" font-family="system-ui,sans-serif" font-size="13"><tspan fill="#ffffff" font-weight="600">${pct}%</tspan><tspan fill="#7c8bd4"> ${m.label}</tspan></text>`
+      `<text x="${cx + R + 8}" y="19.5" font-family="system-ui,sans-serif" font-size="13"><tspan fill="#ffffff" font-weight="600">${pct}%</tspan><tspan fill="#7c8bd4"> ${label}</tspan></text>`
     alt.push(`${m.label} ${pct}%`)
     x += w
   }
@@ -184,10 +186,15 @@ export const register: Register = on => {
         )
         return below ? <Box flexDirection="column">{wait}{below}</Box> : wait
       }
-      const rings = ringsSvg(meters)
+      const rings = ringsSvg(meters, e.props.bodyColumns < 70)
+      // Wraps when the chat is too narrow for both, so the button drops below the rings
+      // instead of being clipped.
       const idle = (
-        <Box paddingX={1} justifyContent="space-between" alignItems="center" marginBottom={1}>
-          <Svg source={rings.source} alt={rings.alt} />
+        <Box paddingX={1} justifyContent="space-between" alignItems="center" flexWrap="wrap" marginBottom={1}>
+          <Box flexShrink={0}>
+            <Svg source={rings.source} alt={rings.alt} />
+          </Box>
+          <Box flexShrink={0}>
           <Button key="compact" label="Compact" onPress={async () => {
             // Runs as if /compact was typed, once the session is idle. $.session.compact()
             // is not available in every host (desktop/SDK sessions reject it).
@@ -197,6 +204,7 @@ export const register: Register = on => {
               $.ui.toast(`Compact failed: ${String((err as Error)?.message ?? err)}`)
             }
           }} />
+          </Box>
         </Box>
       )
       return below ? <Box flexDirection="column">{idle}{below}</Box> : idle

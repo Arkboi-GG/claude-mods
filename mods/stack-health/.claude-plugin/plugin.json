@@ -1,6 +1,6 @@
 {
   "name": "stack-health",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Status dots above the prompt for your Docker Compose services and any local ports you name.",
   "types": "./types/index.d.ts",
   "userConfig": {

@@ -1,6 +1,6 @@
 {
   "name": "preflight",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A live pre-commit checklist above the prompt: re-runs your typecheck, lint or any command after Claude edits files.",
   "types": "./types/index.d.ts",
   "userConfig": {
