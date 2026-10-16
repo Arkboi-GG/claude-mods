@@ -193,7 +193,9 @@ export const register: Register = on => {
             try {
               const r = await $.session.compact()
               if ('skip' in r && r.skip) $.ui.toast(`Compact skipped: ${r.skip}`)
-            } catch {
+              else $.ui.toast(`Compact resolved: ${r.messages?.length ?? 0} messages kept`)
+            } catch (err) {
+              $.ui.toast(`Compact rejected: ${String((err as Error)?.message ?? err)}`)
               // Direct compaction refused (e.g. a turn is running): queue the slash command instead.
               void $.prompt.submit({ text: '/compact', asUser: true })
             }
