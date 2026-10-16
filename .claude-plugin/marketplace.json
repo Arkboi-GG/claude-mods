@@ -1,0 +1,7 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "Panos" },
+  "plugins": [
+    { "name": "task-progress", "source": "./mods/task-progress", "description": "A gradient progress bar above the prompt showing how far Claude is through the current task's plan." }
+  ]
+}
