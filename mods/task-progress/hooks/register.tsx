@@ -163,7 +163,7 @@ export const register: Register = on => {
           <Button key="compact" label="Compact" onPress={() => $.session.compact()} />
         </Box>
       )
-      return below ? <Box flexDirection="column">{idle}{below}</Box> : idle
+      return below ? <Box flexDirection="column" rowGap={1}>{idle}{below}</Box> : idle
     }
 
     const { Box, Text, Svg } = $.ui.resolve(e)
@@ -203,6 +203,6 @@ export const register: Register = on => {
       </Box>
     )
     const devrow = findDevRow(below)
-    return devrow ? <Box flexDirection="column">{row}{devrow}</Box> : row
+    return devrow ? <Box flexDirection="column" rowGap={1}>{row}{devrow}</Box> : row
   })
 }
