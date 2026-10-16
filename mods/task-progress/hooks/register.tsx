@@ -189,6 +189,7 @@ export const register: Register = on => {
         <Box paddingX={1} justifyContent="space-between" alignItems="center" marginBottom={1}>
           <Svg source={rings.source} alt={rings.alt} />
           <Button key="compact" label="Compact" onPress={async () => {
+            $.ui.toast('Compacting…')
             try {
               const r = await $.session.compact()
               if ('skip' in r && r.skip) $.ui.toast(`Compact skipped: ${r.skip}`)
