@@ -100,25 +100,38 @@ async function runAll($: any) {
   isRunning = false
 }
 
+const parse = (s: string): Def[] =>
+  s
+    .split(';')
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => {
+      const i = p.indexOf('=')
+      return i > 0 ? { name: p.slice(0, i).trim(), command: p.slice(i + 1).trim() } : { name: p.split(' ')[0], command: p }
+    })
+
+// The checks to run: the ones named in the `checks` option, else the ones found in the session's folder.
+async function refresh($: any, setting: string) {
+  defs = setting.trim() ? parse(setting) : await detect($)
+  await update($, checksAtom, () => defs.map(d => ({ name: d.name, state: 'idle' as const, issues: 0, at: 0 })))
+}
+
 export const register: Register = (on, options) => {
   const delayMs = Math.max(1, Number(options.delaySeconds ?? 8)) * 1000
 
-  const parse = (s: string): Def[] =>
-    s
-      .split(';')
-      .map(p => p.trim())
-      .filter(Boolean)
-      .map(p => {
-        const i = p.indexOf('=')
-        return i > 0 ? { name: p.slice(0, i).trim(), command: p.slice(i + 1).trim() } : { name: p.split(' ')[0], command: p }
-      })
-
   on('session.start', async ($, e, next) => {
-    defs = String(options.checks ?? '').trim() ? parse(String(options.checks)) : await detect($)
-    await update($, checksAtom, () => defs.map(d => ({ name: d.name, state: 'idle' as const, issues: 0, at: 0 })))
+    await refresh($, String(options.checks ?? ''))
     const result = await next(e)
     $.clock.after(1000, () => runAll($))
     return result
+  })
+
+  // The session moved to another folder (/cd, the host's folder picker, a worktree): look for its checks again.
+  on('classic.CwdChanged', async ($, e, next) => {
+    timer?.cancel()
+    await refresh($, String(options.checks ?? ''))
+    if (defs.length > 0) timer = $.clock.after(1000, () => runAll($))
+    return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
