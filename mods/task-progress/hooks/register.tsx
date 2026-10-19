@@ -123,7 +123,7 @@ async function refreshUsage($: any) {
 const STEPS_TOOL = 'update_steps'
 const STEPS_TOOL_FULL = 'mcp__task-progress__update_steps'
 const STEPS_TOOL_DESCRIPTION =
-  'Shows the person your progress as a bar above the prompt. At the start of any task that takes several steps, call it with the full list of steps (3 to 8, short, imperative), the first one in_progress and the rest pending. Call it again, with the whole list, each time a step finishes or the next one starts, until every step is completed. Skip it for a one-step answer or a quick question.'
+  'Shows the person your progress as a bar above the prompt. At the start of any task that takes several steps, call it with the full list of steps (3 to 8, short, imperative), the first one in_progress and the rest pending. The steps must be real phases of the work that happen one after another, not labels over one batch of edits. Call it again, with the whole list, at every real change: when a step finishes, mark it completed and the next one in_progress before you start that next one. Never mark several steps completed in one call, and never finish with one call that completes everything. Skip it for a one-step answer or a quick question.'
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -204,7 +204,18 @@ export const register: Register = on => {
       content: String(i.content ?? ''),
       status: i.status === 'in_progress' || i.status === 'completed' ? i.status : 'pending',
     }))
+    // Steps that became completed in this one call. Two or more at once means the list was kept for show and ticked off in a
+    // batch, so the bar jumps instead of following the work: say so in the result, where the model reads it, and still accept it.
+    const before = await read($, steps)
+    const alreadyDone = new Set(before.filter(st => st.status === 'completed').map(st => st.content))
+    const justDone = list.filter(st => st.status === 'completed' && !alreadyDone.has(st.content)).length
     await update($, steps, prev => stamp(prev, list, now))
+    if (justDone >= 2) {
+      return {
+        result:
+          'Steps updated, but ' + justDone + ' steps were completed in this one call, so the bar jumped instead of following your work. Update the list when each step really finishes: mark it completed and the next one in_progress, then do that step. Make the steps phases that happen one after another.',
+      }
+    }
     return { result: 'Steps updated.' }
   })
 
