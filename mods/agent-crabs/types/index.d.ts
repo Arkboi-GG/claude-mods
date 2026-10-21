@@ -1,4 +1,7 @@
+export type Stage = 'wake' | 'analyze' | 'cook' | 'wrap'
+
 export type Crab = {
+  stage?: Stage
   id: string
   name: string
   outfit: string

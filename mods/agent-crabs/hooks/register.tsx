@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Crab } from '../types'
+import type { Crab, Stage } from '../types'
 
 const crabsAtom = atom({ plugin: 'agent-crabs', key: 'crabs' } as const, {} as Record<string, Crab>)
 const tickAtom = atom({ plugin: 'agent-crabs', key: 'tick' } as const, 0)
@@ -136,6 +136,25 @@ const mmss = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
+// What an agent is doing, read from its tool calls. There is no progress figure to read, so
+// "wrap" is a guess: it made tool calls, nothing is running, and it has gone quiet, which
+// usually means it is composing its final answer.
+const WORDS: Record<Stage, string[]> = {
+  wake: ['Waking up', 'Stretching claws', 'Finding the keys', 'Yawning'],
+  analyze: ['Analyzing', 'Scuttling through files', 'Sniffing around', 'Squinting at the code'],
+  cook: ['Cooking', 'Pinching pixels', 'Stirring the pot', 'Seasoning'],
+  wrap: ['Wrapping up', 'Tidying shells', 'Polishing claws', 'Plating it up'],
+}
+const STAGE_COLOUR: Record<Stage, string> = { wake: '#9ca3af', analyze: '#60a5fa', cook: '#fb923c', wrap: '#a78bfa' }
+const WRAP_QUIET_MS = 3500
+const WORD_EVERY_MS = 3500
+
+// Writing, editing and running things is "cook"; reading and looking things up is "analyze".
+const COOKING = /^(Edit|Write|NotebookEdit|Bash|PowerShell)$|^mcp__.*(create|update|delete|set|send|publish|add|write)/i
+const kindOf = (tool: string): Stage => (COOKING.test(tool) ? 'cook' : 'analyze')
+
+type Activity = { calls: number; inflight: number; lastAt: number; lastTool: string }
+
 // 'Olivia: rewrite welcome email' -> name Olivia, task 'rewrite welcome email'.
 // The brain's router puts the agent's name in front of every named dispatch.
 const NAMED = /^([A-Za-z][\w.-]{0,24}):\s+(.+)$/
@@ -162,6 +181,32 @@ export const register: Register = (on, options) => {
   // so without this a crab would come back each time it was cleared away.
   const gone = new Set<string>()
 
+  // Each agent's tool calls, by agent id (a subagent's calls carry its id as `agentId`).
+  const activity: Record<string, Activity> = {}
+
+  on('tool.call', async ($, e, next) => {
+    const id = (e as { agentId?: string }).agentId
+    if (!id) return next(e)
+    const a = (activity[id] ??= { calls: 0, inflight: 0, lastAt: 0, lastTool: '' })
+    a.calls++
+    a.inflight++
+    a.lastTool = String(e.tool)
+    a.lastAt = await $.clock.now()
+    try {
+      return await next(e)
+    } finally {
+      a.inflight = Math.max(0, a.inflight - 1)
+      a.lastAt = await $.clock.now()
+    }
+  })
+
+  const stageOf = (id: string, now: number): Stage => {
+    const a = activity[id]
+    if (!a || a.calls === 0) return 'wake'
+    if (a.inflight === 0 && now - a.lastAt >= WRAP_QUIET_MS) return 'wrap'
+    return kindOf(a.lastTool)
+  }
+
   on('session.start', async ($, e, next) => {
     const poll = async () => {
       try {
@@ -182,7 +227,12 @@ export const register: Register = (on, options) => {
           }
           const old = prev[a.id]
           const base: Crab = old ?? { ...describe(a), startedAt: now, state }
-          out[a.id] = { ...base, state, endedAt: state === 'running' ? undefined : (old?.endedAt ?? now) }
+          out[a.id] = {
+            ...base,
+            state,
+            stage: state === 'running' ? stageOf(a.id, now) : undefined,
+            endedAt: state === 'running' ? undefined : (old?.endedAt ?? now),
+          }
         }
         // An agent the engine has dropped from the list has finished.
         for (const [id, c] of Object.entries(prev)) {
@@ -191,6 +241,7 @@ export const register: Register = (on, options) => {
         for (const [id, c] of Object.entries(out)) {
           if (c.endedAt !== undefined && now - c.endedAt > (c.state === 'failed' ? lingerMs * 3 : lingerMs)) {
             delete out[id]
+            delete activity[id]
             gone.add(id)
           }
         }
@@ -220,8 +271,22 @@ export const register: Register = (on, options) => {
     const rows = shown.map(c => {
       const label = c.name || 'agent'
       const stamp = mmss((c.endedAt ?? now) - c.startedAt)
+      // The stage word changes every few seconds within its stage; the last digit of the
+      // id keeps two crabs from saying the same thing at once.
+      const stage: Stage = c.stage ?? 'wake'
+      const words = WORDS[stage]
+      const word = words[(Math.floor((now - c.startedAt) / WORD_EVERY_MS) + c.id.charCodeAt(c.id.length - 1)) % words.length]
       const status =
-        c.state === 'running' ? <Text dimColor>{stamp}</Text> : c.state === 'done' ? <Text color="#22c55e">✓ {stamp}</Text> : <Text color="#ef4444">✗ failed</Text>
+        c.state === 'running' ? (
+          <Box gap={1}>
+            {e.props.bodyColumns >= 50 ? <Text color={STAGE_COLOUR[stage]}>{word}…</Text> : null}
+            <Text dimColor>{stamp}</Text>
+          </Box>
+        ) : c.state === 'done' ? (
+          <Text color="#22c55e">✓ {stamp}</Text>
+        ) : (
+          <Text color="#ef4444">✗ failed</Text>
+        )
       return (
         <Box paddingX={1} alignItems="center" gap={1}>
           <Box flexShrink={0}>
