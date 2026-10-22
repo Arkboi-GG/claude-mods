@@ -7,6 +7,25 @@ const repoAtom = atom({ plugin: 'repo-status', key: 'repo' } as const, null as R
 
 const WIDE = 110
 
+const gateAtom = atom({ plugin: 'repo-status', key: 'gate' } as const, false)
+
+// The bars only show in a GitHub repository: true when the session's folder is inside a git
+// repository whose remote is on GitHub (any git repository when `githubOnly` is off).
+async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
+  try {
+    const r = await $.process.run(['git', 'remote', '-v'], { timeoutMs: 5000 })
+    if (r.exitCode !== 0) return false
+    return !githubOnly || /github\.com/i.test(r.stdout)
+  } catch {
+    return false
+  }
+}
+
+async function checkGate($: any, githubOnly: boolean) {
+  const ok = await inGithubRepo($, githubOnly)
+  await update($, gateAtom, p => (p === ok ? p : ok))
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -38,13 +57,24 @@ function addZone(below: any, zone: any, order: number): any {
 }
 
 export const register: Register = (on, options) => {
+  const githubOnly = options.githubOnly !== false
+
+  // The session moved to another folder: check it again.
+  on('classic.CwdChanged', async ($, e, next) => {
+    await checkGate($, githubOnly)
+    return next(e)
+  })
+
   const wantPr = options.showPullRequest !== false
   let prText = ''
   let prLong = ''
   let prAt = 0
 
   on('session.start', async ($, e, next) => {
+    await checkGate($, githubOnly)
+    $.clock.every(15000, () => checkGate($, githubOnly))
     const poll = async () => {
+      if (!(await read($, gateAtom))) return
       try {
         const st = await $.process.run(['git', 'status', '--porcelain=v1', '-b'], { timeoutMs: 8000 })
         if (st.exitCode !== 0) return update($, repoAtom, () => null)
@@ -89,7 +119,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const repo = await read($, repoAtom)
-    if (e.props.hasSurvey || !repo) return below
+    if (e.props.hasSurvey || !repo || !(await read($, gateAtom))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

@@ -1,10 +1,26 @@
 {
   "name": "preflight",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "A live pre-commit checklist above the prompt: re-runs your typecheck, lint or any command after Claude edits files.",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "checks": { "type": "string", "title": "Checks", "description": "Semicolon-separated name=command pairs, e.g. types=npx tsc -b;lint=npm run lint. Empty: auto-detect (tsc if tsconfig.json exists, npm run lint if defined).", "default": "" },
-    "delaySeconds": { "type": "number", "title": "Wait after last edit (s)", "description": "How long to wait after the last file edit before running the checks.", "default": 8 }
+    "checks": {
+      "type": "string",
+      "title": "Checks",
+      "description": "Semicolon-separated name=command pairs, e.g. types=npx tsc -b;lint=npm run lint. Empty: auto-detect (tsc if tsconfig.json exists, npm run lint if defined).",
+      "default": ""
+    },
+    "delaySeconds": {
+      "type": "number",
+      "title": "Wait after last edit (s)",
+      "description": "How long to wait after the last file edit before running the checks.",
+      "default": 8
+    },
+    "githubOnly": {
+      "type": "boolean",
+      "title": "Only in GitHub repositories",
+      "description": "Show this bar only when the session folder is a git repository whose remote is on GitHub. Turn off to show it in any git repository.",
+      "default": true
+    }
   }
 }

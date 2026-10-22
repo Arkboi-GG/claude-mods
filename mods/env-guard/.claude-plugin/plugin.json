@@ -1,10 +1,26 @@
 {
   "name": "env-guard",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A green/red environment badge above the prompt that turns red when Claude's tool calls touch anything that looks like production.",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "patterns": { "type": "string", "title": "Production patterns", "description": "Comma-separated, case-insensitive regular expressions that mark a tool call as production, e.g. prod,prod\\.example\\.com,eu-west-1.", "default": "\\bprod\\b,\\bproduction\\b" },
-    "holdMinutes": { "type": "number", "title": "Stay red (minutes)", "description": "How long the badge stays red after the last production touch.", "default": 10 }
+    "patterns": {
+      "type": "string",
+      "title": "Production patterns",
+      "description": "Comma-separated, case-insensitive regular expressions that mark a tool call as production, e.g. prod,prod\\.example\\.com,eu-west-1.",
+      "default": "\\bprod\\b,\\bproduction\\b"
+    },
+    "holdMinutes": {
+      "type": "number",
+      "title": "Stay red (minutes)",
+      "description": "How long the badge stays red after the last production touch.",
+      "default": 10
+    },
+    "githubOnly": {
+      "type": "boolean",
+      "title": "Only in GitHub repositories",
+      "description": "Show this bar only when the session folder is a git repository whose remote is on GitHub. Turn off to show it in any git repository.",
+      "default": true
+    }
   }
 }

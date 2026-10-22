@@ -2,6 +2,6 @@ export type Check = { name: string; state: 'idle' | 'running' | 'pass' | 'fail';
 
 declare module 'claude-code' {
   interface PluginState {
-    preflight: { checks: Check[] }
+    preflight: { checks: Check[]; gate: boolean }
   }
 }

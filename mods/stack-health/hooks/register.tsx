@@ -7,6 +7,25 @@ const dotsAtom = atom({ plugin: 'stack-health', key: 'dots' } as const, [] as Do
 
 const WIDE = 110
 
+const gateAtom = atom({ plugin: 'stack-health', key: 'gate' } as const, false)
+
+// The bars only show in a GitHub repository: true when the session's folder is inside a git
+// repository whose remote is on GitHub (any git repository when `githubOnly` is off).
+async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
+  try {
+    const r = await $.process.run(['git', 'remote', '-v'], { timeoutMs: 5000 })
+    if (r.exitCode !== 0) return false
+    return !githubOnly || /github\.com/i.test(r.stdout)
+  } catch {
+    return false
+  }
+}
+
+async function checkGate($: any, githubOnly: boolean) {
+  const ok = await inGithubRepo($, githubOnly)
+  await update($, gateAtom, p => (p === ok ? p : ok))
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -40,6 +59,14 @@ function addZone(below: any, zone: any, order: number): any {
 const COLORS = { up: '#22c55e', wait: '#f59e0b', down: '#ef4444' } as const
 
 export const register: Register = (on, options) => {
+  const githubOnly = options.githubOnly !== false
+
+  // The session moved to another folder: check it again.
+  on('classic.CwdChanged', async ($, e, next) => {
+    await checkGate($, githubOnly)
+    return next(e)
+  })
+
   const wantCompose = options.compose !== false
   const ports = String(options.ports ?? '')
     .split(',')
@@ -51,7 +78,13 @@ export const register: Register = (on, options) => {
     })
 
   on('session.start', async ($, e, next) => {
+    await checkGate($, githubOnly)
+    $.clock.every(15000, () => checkGate($, githubOnly))
     const poll = async () => {
+      if (!(await read($, gateAtom))) {
+        await update($, dotsAtom, p => (p.length ? [] : p))
+        return
+      }
       const dots: Dot[] = []
 
       if (wantCompose) {
@@ -94,7 +127,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const dots = await read($, dotsAtom)
-    if (e.props.hasSurvey || dots.length === 0) return below
+    if (e.props.hasSurvey || dots.length === 0 || !(await read($, gateAtom))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

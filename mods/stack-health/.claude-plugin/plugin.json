@@ -1,10 +1,26 @@
 {
   "name": "stack-health",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Status dots above the prompt for your Docker Compose services and any local ports you name.",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "ports": { "type": "string", "title": "Ports to watch", "description": "Comma-separated local ports or name=port pairs, e.g. web=5173,api=3000.", "default": "" },
-    "compose": { "type": "boolean", "title": "Watch Docker Compose", "description": "Show the services of the docker compose project in the working directory.", "default": true }
+    "ports": {
+      "type": "string",
+      "title": "Ports to watch",
+      "description": "Comma-separated local ports or name=port pairs, e.g. web=5173,api=3000.",
+      "default": ""
+    },
+    "compose": {
+      "type": "boolean",
+      "title": "Watch Docker Compose",
+      "description": "Show the services of the docker compose project in the working directory.",
+      "default": true
+    },
+    "githubOnly": {
+      "type": "boolean",
+      "title": "Only in GitHub repositories",
+      "description": "Show this bar only when the session folder is a git repository whose remote is on GitHub. Turn off to show it in any git repository.",
+      "default": true
+    }
   }
 }

@@ -1,2 +1,20 @@
-{ "name": "repo-status", "version": "0.2.1", "description": "A live git strip above the prompt: branch, ahead/behind, changed files and the open pull request's checks.", "types": "./types/index.d.ts",
-  "userConfig": { "showPullRequest": { "type": "boolean", "title": "Show pull request", "description": "Look up the open PR for the branch with the GitHub CLI (gh), if installed.", "default": true } } }
+{
+  "name": "repo-status",
+  "version": "0.3.0",
+  "description": "A live git strip above the prompt: branch, ahead/behind, changed files and the open pull request's checks.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "showPullRequest": {
+      "type": "boolean",
+      "title": "Show pull request",
+      "description": "Look up the open PR for the branch with the GitHub CLI (gh), if installed.",
+      "default": true
+    },
+    "githubOnly": {
+      "type": "boolean",
+      "title": "Only in GitHub repositories",
+      "description": "Show this bar only when the session folder is a git repository whose remote is on GitHub. Turn off to show it in any git repository.",
+      "default": true
+    }
+  }
+}

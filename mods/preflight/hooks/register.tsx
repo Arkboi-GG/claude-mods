@@ -7,6 +7,25 @@ const checksAtom = atom({ plugin: 'preflight', key: 'checks' } as const, [] as C
 
 const WIDE = 110
 
+const gateAtom = atom({ plugin: 'preflight', key: 'gate' } as const, false)
+
+// The bars only show in a GitHub repository: true when the session's folder is inside a git
+// repository whose remote is on GitHub (any git repository when `githubOnly` is off).
+async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
+  try {
+    const r = await $.process.run(['git', 'remote', '-v'], { timeoutMs: 5000 })
+    if (r.exitCode !== 0) return false
+    return !githubOnly || /github\.com/i.test(r.stdout)
+  } catch {
+    return false
+  }
+}
+
+async function checkGate($: any, githubOnly: boolean) {
+  const ok = await inGithubRepo($, githubOnly)
+  await update($, gateAtom, p => (p === ok ? p : ok))
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -117,26 +136,33 @@ async function refresh($: any, setting: string) {
 }
 
 export const register: Register = (on, options) => {
+  const githubOnly = options.githubOnly !== false
+
   const delayMs = Math.max(1, Number(options.delaySeconds ?? 8)) * 1000
 
   on('session.start', async ($, e, next) => {
+    await checkGate($, githubOnly)
+    $.clock.every(15000, () => checkGate($, githubOnly))
     await refresh($, String(options.checks ?? ''))
     const result = await next(e)
-    $.clock.after(1000, () => runAll($))
+    $.clock.after(1000, async () => {
+      if (await read($, gateAtom)) runAll($)
+    })
     return result
   })
 
   // The session moved to another folder (/cd, the host's folder picker, a worktree): look for its checks again.
   on('classic.CwdChanged', async ($, e, next) => {
     timer?.cancel()
+    await checkGate($, githubOnly)
     await refresh($, String(options.checks ?? ''))
-    if (defs.length > 0) timer = $.clock.after(1000, () => runAll($))
+    if (defs.length > 0 && (await read($, gateAtom))) timer = $.clock.after(1000, () => runAll($))
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if (EDIT_TOOLS.has(String(e.tool)) && defs.length > 0) {
+    if (EDIT_TOOLS.has(String(e.tool)) && defs.length > 0 && (await read($, gateAtom))) {
       timer?.cancel()
       timer = $.clock.after(delayMs, () => runAll($))
     }
@@ -146,7 +172,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const checks = await read($, checksAtom)
-    if (e.props.hasSurvey || checks.length === 0) return below
+    if (e.props.hasSurvey || checks.length === 0 || !(await read($, gateAtom))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

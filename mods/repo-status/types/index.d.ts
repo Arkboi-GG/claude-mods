@@ -9,6 +9,6 @@ export type Repo = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'repo-status': { repo: Repo | null }
+    'repo-status': { repo: Repo | null; gate: boolean }
   }
 }
