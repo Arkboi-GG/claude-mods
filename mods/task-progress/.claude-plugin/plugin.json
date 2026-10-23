@@ -1,1 +1,14 @@
-{ "name": "task-progress", "version": "0.6.0", "description": "A bar above the prompt: gradient task progress while Claude works, usage rings (context, 5h, 7d) while idle.", "types": "./types/index.d.ts" }
+{
+  "name": "task-progress",
+  "version": "0.7.0",
+  "description": "A bar above the prompt: gradient task progress while Claude works, usage rings (context, 5h, 7d) while idle.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "compactInstructions": {
+      "type": "string",
+      "title": "Compact instructions",
+      "description": "What the Compact button asks the summary to keep, as if typed after /compact. Leave empty for the default: keep the goal, decisions, files, key values, open questions and next steps so work continues on the same topic.",
+      "default": ""
+    }
+  }
+}

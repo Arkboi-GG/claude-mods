@@ -125,7 +125,15 @@ const STEPS_TOOL_FULL = 'mcp__task-progress__update_steps'
 const STEPS_TOOL_DESCRIPTION =
   'Shows the person your progress as a bar above the prompt. At the start of any task that takes several steps, call it with the full list of steps (3 to 8, short, imperative), the first one in_progress and the rest pending. The steps must be real phases of the work that happen one after another, not labels over one batch of edits. Call it again, with the whole list, at every real change: when a step finishes, mark it completed and the next one in_progress before you start that next one. Never mark several steps completed in one call, and never finish with one call that completes everything. Skip it for a one-step answer or a quick question.'
 
-export const register: Register = on => {
+// What the Compact button asks the summary to keep, so work carries on in the same thread.
+const DEFAULT_COMPACT_FOCUS =
+  'Keep what is needed to carry on the same topic without re-explaining: the current goal and where we stand, ' +
+  'decisions made and why, files and paths touched, exact names, values and commands that matter, ' +
+  'problems hit and how they were fixed, open questions and the next steps. Drop chatter and dead ends.'
+
+export const register: Register = (on, options) => {
+  const compactFocus = String(options.compactInstructions ?? '').trim() || DEFAULT_COMPACT_FOCUS
+
   on('session.start', async ($, e, next) => {
     $.ui.toast('task-progress loaded')
     try {
@@ -253,10 +261,11 @@ export const register: Register = on => {
           </Box>
           <Box flexShrink={0}>
           <Button key="compact" label="Compact" onPress={async () => {
-            // Runs as if /compact was typed, once the session is idle. $.session.compact()
-            // is not available in every host (desktop/SDK sessions reject it).
+            // Runs as if "/compact <instructions>" was typed, once the session is idle. The
+            // instructions are what a person would add by hand: keep what is needed to carry on.
+            // $.session.compact() is not available in every host (desktop/SDK sessions reject it).
             try {
-              await $.command.run({ command: 'compact' })
+              await $.command.run({ command: 'compact', args: compactFocus })
             } catch (err) {
               $.ui.toast(`Compact failed: ${String((err as Error)?.message ?? err)}`)
             }
