@@ -1,6 +1,6 @@
 {
   "name": "task-progress",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A bar above the prompt: gradient task progress while Claude works, usage rings (context, 5h, 7d) while idle.",
   "types": "./types/index.d.ts",
   "userConfig": {

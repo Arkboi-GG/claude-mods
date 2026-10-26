@@ -76,8 +76,21 @@ function limitLabel(kind: string): string {
   return k.replace(/_/g, ' ')
 }
 
+// Time until a limit resets: '42m', '4h 37m', '5d 3h'.
+function timeLeft(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60000))
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ${String(m % 60).padStart(2, '0')}m`
+  return `${Math.floor(h / 24)}d ${h % 24}h`
+}
+
+// What a limit's window is called next to its time left.
+const WINDOW_NAME: Record<string, string> = { '5h': 'session', '7d': 'week' }
+
 // The idle band: a ring per meter (context, 5-hour and 7-day limits), drawn as one SVG.
-function ringsSvg(meters: Array<{ label: string; percent: number }>, narrow: boolean) {
+// A limit that knows when it resets shows the time left; the ring still fills with the share used.
+function ringsSvg(meters: Array<{ label: string; percent: number; resetsAt?: number }>, narrow: boolean, now: number) {
   const R = 11
   const C = 2 * Math.PI * R
   let x = 0
@@ -85,9 +98,11 @@ function ringsSvg(meters: Array<{ label: string; percent: number }>, narrow: boo
   const alt: string[] = []
   for (const m of meters) {
     const pct = Math.max(0, Math.min(100, Math.round(m.percent)))
-    // Narrow chat: the context label shortens and the gap between rings tightens.
-    const label = narrow && m.label === 'context' ? 'ctx' : m.label
-    const text = `${pct}% ${label}`
+    const left = m.resetsAt && m.resetsAt > now ? timeLeft(m.resetsAt - now) : null
+    // Narrow chat: the context label shortens, the window name goes and the gap between rings tightens.
+    const big = left ?? `${pct}%`
+    const small = left ? (narrow ? '' : (WINDOW_NAME[m.label] ?? m.label)) : narrow && m.label === 'context' ? 'ctx' : m.label
+    const text = small ? `${big} ${small}` : big
     const w = Math.ceil(R * 2 + 14 + text.length * 7.6 + (narrow ? 8 : 26))
     const cx = x + R + 4
     const color = pct >= 95 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#a78bfa'
@@ -95,8 +110,8 @@ function ringsSvg(meters: Array<{ label: string; percent: number }>, narrow: boo
     body +=
       `<circle cx="${cx}" cy="15" r="${R}" fill="none" stroke="#8b8b9b" stroke-opacity=".25" stroke-width="3"/>` +
       `<circle cx="${cx}" cy="15" r="${R}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${dash} ${C}" transform="rotate(-90 ${cx} 15)"/>` +
-      `<text x="${cx + R + 8}" y="19.5" font-family="system-ui,sans-serif" font-size="13"><tspan fill="#ffffff" font-weight="600">${pct}%</tspan><tspan fill="#7c8bd4"> ${label}</tspan></text>`
-    alt.push(`${m.label} ${pct}%`)
+      `<text x="${cx + R + 8}" y="19.5" font-family="system-ui,sans-serif" font-size="13"><tspan fill="#ffffff" font-weight="600">${big}</tspan>${small ? `<tspan fill="#7c8bd4"> ${small}</tspan>` : ''}</text>`
+    alt.push(`${m.label} ${pct}% used${left ? `, resets in ${left}` : ''}`)
     x += w
   }
   return {
@@ -110,9 +125,14 @@ async function refreshUsage($: any) {
     const u = await $.session.usage()
     const snap: Usage = {
       context: u.context?.percent ?? null,
-      limits: (u.rateLimits ?? []).map((l: any) => ({ label: limitLabel(String(l.kind)), percent: Number(l.percentUsed) })),
+      limits: (u.rateLimits ?? []).map((l: any) => {
+        const at = l.resetsAt ? Date.parse(String(l.resetsAt)) : NaN
+        return { label: limitLabel(String(l.kind)), percent: Number(l.percentUsed), resetsAt: Number.isFinite(at) ? at : undefined }
+      }),
     }
     await update($, usage, prev => (JSON.stringify(prev) === JSON.stringify(snap) ? prev : snap))
+    // The time left changes with the clock, not with the reading: redraw once a minute.
+    await update($, tick, n => n + 1)
   } catch {
     // no usage figures yet: keep the last reading
   }
@@ -241,6 +261,8 @@ export const register: Register = (on, options) => {
     if (list.length === 0 || (!e.props.isWorking && !isPaused)) {
       // Idle: the usage rings, with a Compact button on the right.
       const u = await read($, usage)
+      await read($, tick)
+      const idleNow = await $.clock.now()
       const meters = [...(u.context === null ? [] : [{ label: 'context', percent: u.context }]), ...u.limits]
       const { Box, Button, Svg, Text } = $.ui.resolve(e)
       if (meters.length === 0) {
@@ -251,7 +273,7 @@ export const register: Register = (on, options) => {
         )
         return below ? <Box flexDirection="column">{wait}{below}</Box> : wait
       }
-      const rings = ringsSvg(meters, e.props.bodyColumns < 70)
+      const rings = ringsSvg(meters, e.props.bodyColumns < 70, idleNow)
       // Wraps when the chat is too narrow for both, so the button drops below the rings
       // instead of being clipped.
       const idle = (
