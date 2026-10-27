@@ -57,6 +57,9 @@ function addZone(below: any, zone: any, order: number): any {
 }
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+// Files also change through the shell (a script that rewrites files, git pull, checkout, a formatter): the checks run after those calls too,
+// or the bar keeps showing the result of an earlier moment, for example a failure seen halfway through a change.
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 const GLYPH = { idle: '·', running: '…', pass: '✓', fail: '✗' } as const
 const COLOR = { idle: '#6b7280', running: '#f59e0b', pass: '#22c55e', fail: '#ef4444' } as const
 
@@ -66,6 +69,9 @@ let defs: Def[] = []
 let timer: { cancel: () => void } | null = null
 let isRunning = false
 let isDirty = false
+// A check that fails is run once more before it is shown as failed: a run that lands halfway through a change (some files written, others
+// not yet) reports errors that are gone a moment later.
+let retryOnFail = true
 
 async function shell($: any, command: string) {
   try {
@@ -109,6 +115,13 @@ async function runAll($: any) {
       } catch {
         r = { exitCode: 1, stdout: '', stderr: 'error: could not run' }
       }
+      if (r.exitCode !== 0 && retryOnFail) {
+        try {
+          r = await shell($, defs[i].command)
+        } catch {
+          // keep the first result
+        }
+      }
       const out = `${r.stdout}\n${r.stderr}`
       const issues = r.exitCode === 0 ? 0 : Math.max(1, (out.match(/\berror\b/gi) ?? []).length)
       await update($, checksAtom, prev =>
@@ -139,6 +152,8 @@ export const register: Register = (on, options) => {
   const githubOnly = options.githubOnly !== false
 
   const delayMs = Math.max(1, Number(options.delaySeconds ?? 8)) * 1000
+  const afterShell = options.afterShell !== false
+  retryOnFail = options.retryOnFail !== false
 
   on('session.start', async ($, e, next) => {
     await checkGate($, githubOnly)
@@ -162,7 +177,8 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if (EDIT_TOOLS.has(String(e.tool)) && defs.length > 0 && (await read($, gateAtom))) {
+    const tool = String(e.tool)
+    if ((EDIT_TOOLS.has(tool) || (afterShell && SHELL_TOOLS.has(tool))) && defs.length > 0 && (await read($, gateAtom))) {
       timer?.cancel()
       timer = $.clock.after(delayMs, () => runAll($))
     }

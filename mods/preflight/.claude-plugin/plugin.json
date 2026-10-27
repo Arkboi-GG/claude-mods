@@ -1,6 +1,6 @@
 {
   "name": "preflight",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A live pre-commit checklist above the prompt: re-runs your typecheck, lint or any command after Claude edits files.",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -15,6 +15,18 @@
       "title": "Wait after last edit (s)",
       "description": "How long to wait after the last file edit before running the checks.",
       "default": 8
+    },
+    "afterShell": {
+      "type": "boolean",
+      "title": "Also run after shell commands",
+      "description": "Run the checks after Bash and PowerShell calls too, since scripts, git pull and formatters change files without an edit tool. Turn off to run only after file edits.",
+      "default": true
+    },
+    "retryOnFail": {
+      "type": "boolean",
+      "title": "Confirm a failure before showing it",
+      "description": "Run a failing check once more before showing it as failed, so a run that lands halfway through a change does not leave a stale failure on the bar.",
+      "default": true
     },
     "githubOnly": {
       "type": "boolean",
