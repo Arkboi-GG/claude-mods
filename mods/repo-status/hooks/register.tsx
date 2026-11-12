@@ -3,11 +3,20 @@ import type { Register } from 'claude-code'
 
 import type { Repo } from '../types'
 
-const repoAtom = atom({ plugin: 'repo-status', key: 'repo' } as const, null as Repo | null)
+const repoAtom = atom({ plugin: 'repo-status', key: 'repo' } as const, {} as Record<string, Repo | null>)
 
 const WIDE = 110
 
-const gateAtom = atom({ plugin: 'repo-status', key: 'gate' } as const, false)
+// Every session keeps its own readings: each value is a map keyed by the session id.
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
+
+const gateAtom = atom({ plugin: 'repo-status', key: 'gate' } as const, {} as Record<string, boolean>)
 
 // The bars only show in a GitHub repository: true when the session's folder is inside a git
 // repository whose remote is on GitHub (any git repository when `githubOnly` is off).
@@ -23,7 +32,12 @@ async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
 
 async function checkGate($: any, githubOnly: boolean) {
   const ok = await inGithubRepo($, githubOnly)
-  await update($, gateAtom, p => (p === ok ? p : ok))
+  const id = await sid($)
+  await update($, gateAtom, p => (p[id] === ok ? p : { ...p, [id]: ok }))
+}
+
+async function gateOn($: any): Promise<boolean> {
+  return (await read($, gateAtom))[await sid($)] === true
 }
 
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
@@ -66,18 +80,18 @@ export const register: Register = (on, options) => {
   })
 
   const wantPr = options.showPullRequest !== false
-  let prText = ''
-  let prLong = ''
-  let prAt = 0
-
   on('session.start', async ($, e, next) => {
+    const id = await sid($)
+    let prText = ''
+    let prLong = ''
+    let prAt = 0
     await checkGate($, githubOnly)
     $.clock.every(15000, () => checkGate($, githubOnly))
     const poll = async () => {
-      if (!(await read($, gateAtom))) return
+      if (!(await gateOn($))) return
       try {
         const st = await $.process.run(['git', 'status', '--porcelain=v1', '-b'], { timeoutMs: 8000 })
-        if (st.exitCode !== 0) return update($, repoAtom, () => null)
+        if (st.exitCode !== 0) return update($, repoAtom, p => ({ ...p, [id]: null }))
         const lines = st.stdout.split('\n').filter(Boolean)
         const head = lines[0] ?? ''
         const branch = head.replace(/^## /, '').replace(/^No commits yet on /, '').split('...')[0].split(' ')[0]
@@ -106,7 +120,7 @@ export const register: Register = (on, options) => {
             prLong = ''
           }
         }
-        await update($, repoAtom, () => ({ branch, ahead, behind, changed: lines.length - 1, pr: prText, prLong }))
+        await update($, repoAtom, p => ({ ...p, [id]: { branch, ahead, behind, changed: lines.length - 1, pr: prText, prLong } }))
       } catch {
         // git missing or timed out: keep the last reading
       }
@@ -118,8 +132,8 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    const repo = await read($, repoAtom)
-    if (e.props.hasSurvey || !repo || !(await read($, gateAtom))) return below
+    const repo = (await read($, repoAtom))[await sid($)] ?? null
+    if (e.props.hasSurvey || !repo || !(await gateOn($))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

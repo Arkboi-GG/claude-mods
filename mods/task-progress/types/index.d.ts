@@ -4,6 +4,6 @@ export type Usage = { context: number | null; limits: Array<{ label: string; per
 
 declare module 'claude-code' {
   interface PluginState {
-    'task-progress': { steps: Step[]; usage: Usage; stoppedAt: number; tick: number }
+    'task-progress': { steps: Record<string, Step[]>; usage: Record<string, Usage>; stoppedAt: Record<string, number>; tick: number }
   }
 }

@@ -2,6 +2,6 @@ export type Touch = { at: number; tool: string; hit: string } | null
 
 declare module 'claude-code' {
   interface PluginState {
-    'env-guard': { touch: Touch; gate: boolean }
+    'env-guard': { touch: Record<string, Touch>; gate: Record<string, boolean> }
   }
 }

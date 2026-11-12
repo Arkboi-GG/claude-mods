@@ -13,6 +13,6 @@ export type Crab = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-crabs': { crabs: Record<string, Crab>; tick: number }
+    'agent-crabs': { crabs: Record<string, Record<string, Crab>>; tick: number }
   }
 }

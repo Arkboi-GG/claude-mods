@@ -3,11 +3,20 @@ import type { Register } from 'claude-code'
 
 import type { Check } from '../types'
 
-const checksAtom = atom({ plugin: 'preflight', key: 'checks' } as const, [] as Check[])
+const checksAtom = atom({ plugin: 'preflight', key: 'checks' } as const, {} as Record<string, Check[]>)
 
 const WIDE = 110
 
-const gateAtom = atom({ plugin: 'preflight', key: 'gate' } as const, false)
+// Every session keeps its own readings: each value is a map keyed by the session id.
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
+
+const gateAtom = atom({ plugin: 'preflight', key: 'gate' } as const, {} as Record<string, boolean>)
 
 // The bars only show in a GitHub repository: true when the session's folder is inside a git
 // repository whose remote is on GitHub (any git repository when `githubOnly` is off).
@@ -23,7 +32,12 @@ async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
 
 async function checkGate($: any, githubOnly: boolean) {
   const ok = await inGithubRepo($, githubOnly)
-  await update($, gateAtom, p => (p === ok ? p : ok))
+  const id = await sid($)
+  await update($, gateAtom, p => (p[id] === ok ? p : { ...p, [id]: ok }))
+}
+
+async function gateOn($: any): Promise<boolean> {
+  return (await read($, gateAtom))[await sid($)] === true
 }
 
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
@@ -65,10 +79,9 @@ const COLOR = { idle: '#6b7280', running: '#f59e0b', pass: '#22c55e', fail: '#ef
 
 type Def = { name: string; command: string }
 
-let defs: Def[] = []
-let timer: { cancel: () => void } | null = null
-let isRunning = false
-let isDirty = false
+type Run = { defs: Def[]; timer: { cancel: () => void } | null; isRunning: boolean; isDirty: boolean }
+const runs: Record<string, Run> = {}
+const runOf = (id: string): Run => (runs[id] ??= { defs: [], timer: null, isRunning: false, isDirty: false })
 // A check that fails is run once more before it is shown as failed: a run that lands halfway through a change (some files written, others
 // not yet) reports errors that are gone a moment later.
 let retryOnFail = true
@@ -100,14 +113,17 @@ async function detect($: any): Promise<Def[]> {
 }
 
 async function runAll($: any) {
-  if (isRunning) {
-    isDirty = true
+  const id = await sid($)
+  const run = runOf(id)
+  const defs = run.defs
+  if (run.isRunning) {
+    run.isDirty = true
     return
   }
-  isRunning = true
+  run.isRunning = true
   do {
-    isDirty = false
-    await update($, checksAtom, () => defs.map(d => ({ name: d.name, state: 'running' as const, issues: 0, at: 0 })))
+    run.isDirty = false
+    await update($, checksAtom, p => ({ ...p, [id]: defs.map(d => ({ name: d.name, state: 'running' as const, issues: 0, at: 0 })) }))
     for (let i = 0; i < defs.length; i++) {
       let r
       try {
@@ -124,12 +140,13 @@ async function runAll($: any) {
       }
       const out = `${r.stdout}\n${r.stderr}`
       const issues = r.exitCode === 0 ? 0 : Math.max(1, (out.match(/\berror\b/gi) ?? []).length)
-      await update($, checksAtom, prev =>
-        prev.map((c, k) => (k === i ? { ...c, state: r.exitCode === 0 ? ('pass' as const) : ('fail' as const), issues, at: Date.now() } : c)),
-      )
+      await update($, checksAtom, p => ({
+        ...p,
+        [id]: (p[id] ?? []).map((c, k) => (k === i ? { ...c, state: r.exitCode === 0 ? ('pass' as const) : ('fail' as const), issues, at: Date.now() } : c)),
+      }))
     }
-  } while (isDirty)
-  isRunning = false
+  } while (run.isDirty)
+  run.isRunning = false
 }
 
 const parse = (s: string): Def[] =>
@@ -144,8 +161,10 @@ const parse = (s: string): Def[] =>
 
 // The checks to run: the ones named in the `checks` option, else the ones found in the session's folder.
 async function refresh($: any, setting: string) {
-  defs = setting.trim() ? parse(setting) : await detect($)
-  await update($, checksAtom, () => defs.map(d => ({ name: d.name, state: 'idle' as const, issues: 0, at: 0 })))
+  const id = await sid($)
+  const defs = setting.trim() ? parse(setting) : await detect($)
+  runOf(id).defs = defs
+  await update($, checksAtom, p => ({ ...p, [id]: defs.map(d => ({ name: d.name, state: 'idle' as const, issues: 0, at: 0 })) }))
 }
 
 export const register: Register = (on, options) => {
@@ -161,34 +180,36 @@ export const register: Register = (on, options) => {
     await refresh($, String(options.checks ?? ''))
     const result = await next(e)
     $.clock.after(1000, async () => {
-      if (await read($, gateAtom)) runAll($)
+      if (await gateOn($)) runAll($)
     })
     return result
   })
 
   // The session moved to another folder (/cd, the host's folder picker, a worktree): look for its checks again.
   on('classic.CwdChanged', async ($, e, next) => {
-    timer?.cancel()
+    const run = runOf(await sid($))
+    run.timer?.cancel()
     await checkGate($, githubOnly)
     await refresh($, String(options.checks ?? ''))
-    if (defs.length > 0 && (await read($, gateAtom))) timer = $.clock.after(1000, () => runAll($))
+    if (run.defs.length > 0 && (await gateOn($))) run.timer = $.clock.after(1000, () => runAll($))
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
     const tool = String(e.tool)
-    if ((EDIT_TOOLS.has(tool) || (afterShell && SHELL_TOOLS.has(tool))) && defs.length > 0 && (await read($, gateAtom))) {
-      timer?.cancel()
-      timer = $.clock.after(delayMs, () => runAll($))
+    const run = runOf(await sid($))
+    if ((EDIT_TOOLS.has(tool) || (afterShell && SHELL_TOOLS.has(tool))) && run.defs.length > 0 && (await gateOn($))) {
+      run.timer?.cancel()
+      run.timer = $.clock.after(delayMs, () => runAll($))
     }
     return result
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    const checks = await read($, checksAtom)
-    if (e.props.hasSurvey || checks.length === 0 || !(await read($, gateAtom))) return below
+    const checks = (await read($, checksAtom))[await sid($)] ?? []
+    if (e.props.hasSurvey || checks.length === 0 || !(await gateOn($))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

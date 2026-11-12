@@ -3,11 +3,40 @@ import type { Register } from 'claude-code'
 
 import type { Step, Usage } from '../types'
 
-const steps = atom({ plugin: 'task-progress', key: 'steps' } as const, [] as Step[])
+const steps = atom({ plugin: 'task-progress', key: 'steps' } as const, {} as Record<string, Step[]>)
 
-const stoppedAt = atom({ plugin: 'task-progress', key: 'stoppedAt' } as const, 0)
+const stoppedAt = atom({ plugin: 'task-progress', key: 'stoppedAt' } as const, {} as Record<string, number>)
 const tick = atom({ plugin: 'task-progress', key: 'tick' } as const, 0)
-const usage = atom({ plugin: 'task-progress', key: 'usage' } as const, { context: null, limits: [] } as Usage)
+const usage = atom({ plugin: 'task-progress', key: 'usage' } as const, {} as Record<string, Usage>)
+
+// Every session keeps its own steps, pause time and readings: the values are maps keyed by the session id.
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
+
+const NO_USAGE: Usage = { context: null, limits: [] }
+
+async function getSteps($: any): Promise<Step[]> {
+  return (await read($, steps))[await sid($)] ?? []
+}
+async function setSteps($: any, fn: (prev: Step[]) => Step[]) {
+  const id = await sid($)
+  await update($, steps, p => ({ ...p, [id]: fn(p[id] ?? []) }))
+}
+async function getStopped($: any): Promise<number> {
+  return (await read($, stoppedAt))[await sid($)] ?? 0
+}
+async function setStopped($: any, fn: () => number) {
+  const id = await sid($)
+  await update($, stoppedAt, p => ({ ...p, [id]: fn() }))
+}
+async function getUsage($: any): Promise<Usage> {
+  return (await read($, usage))[await sid($)] ?? NO_USAGE
+}
 
 const ORANGE = '#f97316'
 const TRACK = '#2b2b2b'
@@ -130,7 +159,8 @@ async function refreshUsage($: any) {
         return { label: limitLabel(String(l.kind)), percent: Number(l.percentUsed), resetsAt: Number.isFinite(at) ? at : undefined }
       }),
     }
-    await update($, usage, prev => (JSON.stringify(prev) === JSON.stringify(snap) ? prev : snap))
+    const id = await sid($)
+    await update($, usage, p => (JSON.stringify(p[id]) === JSON.stringify(snap) ? p : { ...p, [id]: snap }))
     // The time left changes with the clock, not with the reading: redraw once a minute.
     await update($, tick, n => n + 1)
   } catch {
@@ -187,27 +217,27 @@ export const register: Register = (on, options) => {
     $.clock.every(60000, () => refreshUsage($))
     // Once a second while a step runs, so its block keeps filling.
     $.clock.every(1000, async () => {
-      const list = await read($, steps)
-      if (list.some(st => st.status === 'in_progress') && (await read($, stoppedAt)) === 0) await update($, tick, n => n + 1)
+      const list = await getSteps($)
+      if (list.some(st => st.status === 'in_progress') && (await getStopped($)) === 0) await update($, tick, n => n + 1)
     })
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     await refreshUsage($)
-    const list = await read($, steps)
+    const list = await getSteps($)
     const isOpen = list.length > 0 && list.some(st => st.status !== 'completed')
-    await update($, stoppedAt, () => 0)
+    await setStopped($, () => 0)
     if (isOpen) {
       const at = await $.clock.now()
-      await update($, stoppedAt, () => at)
+      await setStopped($, () => at)
     }
     return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
-    await update($, steps, () => [])
-    await update($, stoppedAt, () => 0)
+    await setSteps($, () => [])
+    await setStopped($, () => 0)
     return next(e)
   })
 
@@ -215,11 +245,11 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     if (e.tool === 'TodoWrite') {
       const todos = (e as { todos?: Step[] }).todos ?? []
-      await update($, steps, prev => stamp(prev, todos, now))
+      await setSteps($, prev => stamp(prev, todos, now))
     } else if (e.tool === 'mcp__ccd_turn__update_plan') {
-      await update($, steps, prev => stamp(prev, applyPlan(prev, e as Record<string, unknown>), now))
+      await setSteps($, prev => stamp(prev, applyPlan(prev, e as Record<string, unknown>), now))
     } else if (e.tool === 'mcp__ccd_turn__wrap_up') {
-      await update($, steps, prev => prev.map(s => ({ content: s.content, status: 'completed' as const })))
+      await setSteps($, prev => prev.map(s => ({ content: s.content, status: 'completed' as const })))
     }
     return next(e)
   })
@@ -234,10 +264,10 @@ export const register: Register = (on, options) => {
     }))
     // Steps that became completed in this one call. Two or more at once means the list was kept for show and ticked off in a
     // batch, so the bar jumps instead of following the work: say so in the result, where the model reads it, and still accept it.
-    const before = await read($, steps)
+    const before = await getSteps($)
     const alreadyDone = new Set(before.filter(st => st.status === 'completed').map(st => st.content))
     const justDone = list.filter(st => st.status === 'completed' && !alreadyDone.has(st.content)).length
-    await update($, steps, prev => stamp(prev, list, now))
+    await setSteps($, prev => stamp(prev, list, now))
     if (justDone >= 2) {
       return {
         result:
@@ -249,7 +279,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    const list = await read($, steps)
+    const list = await getSteps($)
     // Only while Claude works: then the bar stands in for the other stats bands,
     // keeping just the dev row; when the turn ends they come back.
     if (e.props.hasSurvey) return below
@@ -260,7 +290,7 @@ export const register: Register = (on, options) => {
 
     if (list.length === 0 || (!e.props.isWorking && !isPaused)) {
       // Idle: the usage rings, with a Compact button on the right.
-      const u = await read($, usage)
+      const u = await getUsage($)
       await read($, tick)
       const idleNow = await $.clock.now()
       const meters = [...(u.context === null ? [] : [{ label: 'context', percent: u.context }]), ...u.limits]
@@ -300,7 +330,7 @@ export const register: Register = (on, options) => {
 
     const { Box, Text, Svg } = $.ui.resolve(e)
     await read($, tick)
-    const stopped = await read($, stoppedAt)
+    const stopped = await getStopped($)
     const now = stopped || (await $.clock.now())
     const done = list.filter(s => s.status === 'completed').length
     const pct = Math.round((done / list.length) * 100)

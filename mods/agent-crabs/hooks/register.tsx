@@ -3,7 +3,16 @@ import type { Register } from 'claude-code'
 
 import type { Crab, Stage } from '../types'
 
-const crabsAtom = atom({ plugin: 'agent-crabs', key: 'crabs' } as const, {} as Record<string, Crab>)
+// Every session keeps its own crabs: the value is a map keyed by the session id.
+const crabsAtom = atom({ plugin: 'agent-crabs', key: 'crabs' } as const, {} as Record<string, Record<string, Crab>>)
+
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
 const tickAtom = atom({ plugin: 'agent-crabs', key: 'tick' } as const, 0)
 
 const ORANGE = '#fb923c'
@@ -208,11 +217,12 @@ export const register: Register = (on, options) => {
   }
 
   on('session.start', async ($, e, next) => {
+    const sessionId = await sid($)
     const poll = async () => {
       try {
         const list = await $.agent.list()
         const now = await $.clock.now()
-        const prev = await read($, crabsAtom)
+        const prev = (await read($, crabsAtom))[sessionId] ?? {}
         const out: Record<string, Crab> = {}
         const seen = new Set<string>()
         for (const a of list) {
@@ -245,7 +255,7 @@ export const register: Register = (on, options) => {
             gone.add(id)
           }
         }
-        await update($, crabsAtom, p => (JSON.stringify(p) === JSON.stringify(out) ? p : out))
+        await update($, crabsAtom, p => (JSON.stringify(p[sessionId] ?? {}) === JSON.stringify(out) ? p : { ...p, [sessionId]: out }))
         // Once a second while there are crabs, so claws move and the timers count.
         if (Object.keys(out).length > 0) await update($, tickAtom, n => n + 1)
       } catch {
@@ -259,7 +269,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
-    const crabs = Object.values(await read($, crabsAtom)).sort((a, b) => a.startedAt - b.startedAt)
+    const crabs = Object.values((await read($, crabsAtom))[await sid($)] ?? {}).sort((a, b) => a.startedAt - b.startedAt)
     const tick = await read($, tickAtom)
     if (crabs.length === 0) return below
 

@@ -3,11 +3,20 @@ import type { Register } from 'claude-code'
 
 import type { Dot } from '../types'
 
-const dotsAtom = atom({ plugin: 'stack-health', key: 'dots' } as const, [] as Dot[])
+const dotsAtom = atom({ plugin: 'stack-health', key: 'dots' } as const, {} as Record<string, Dot[]>)
 
 const WIDE = 110
 
-const gateAtom = atom({ plugin: 'stack-health', key: 'gate' } as const, false)
+// Every session keeps its own readings: each value is a map keyed by the session id.
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
+
+const gateAtom = atom({ plugin: 'stack-health', key: 'gate' } as const, {} as Record<string, boolean>)
 
 // The bars only show in a GitHub repository: true when the session's folder is inside a git
 // repository whose remote is on GitHub (any git repository when `githubOnly` is off).
@@ -23,7 +32,12 @@ async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
 
 async function checkGate($: any, githubOnly: boolean) {
   const ok = await inGithubRepo($, githubOnly)
-  await update($, gateAtom, p => (p === ok ? p : ok))
+  const id = await sid($)
+  await update($, gateAtom, p => (p[id] === ok ? p : { ...p, [id]: ok }))
+}
+
+async function gateOn($: any): Promise<boolean> {
+  return (await read($, gateAtom))[await sid($)] === true
 }
 
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
@@ -78,11 +92,12 @@ export const register: Register = (on, options) => {
     })
 
   on('session.start', async ($, e, next) => {
+    const id = await sid($)
     await checkGate($, githubOnly)
     $.clock.every(15000, () => checkGate($, githubOnly))
     const poll = async () => {
-      if (!(await read($, gateAtom))) {
-        await update($, dotsAtom, p => (p.length ? [] : p))
+      if (!(await gateOn($))) {
+        await update($, dotsAtom, p => (p[id]?.length ? { ...p, [id]: [] } : p))
         return
       }
       const dots: Dot[] = []
@@ -117,7 +132,7 @@ export const register: Register = (on, options) => {
         }
       }
 
-      await update($, dotsAtom, () => dots)
+      await update($, dotsAtom, p => ({ ...p, [id]: dots }))
     }
     await poll()
     $.clock.every(10000, poll)
@@ -126,8 +141,8 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    const dots = await read($, dotsAtom)
-    if (e.props.hasSurvey || dots.length === 0 || !(await read($, gateAtom))) return below
+    const dots = (await read($, dotsAtom))[await sid($)] ?? []
+    if (e.props.hasSurvey || dots.length === 0 || !(await gateOn($))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE

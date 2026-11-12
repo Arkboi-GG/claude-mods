@@ -3,11 +3,20 @@ import type { Register } from 'claude-code'
 
 import type { Touch } from '../types'
 
-const touchAtom = atom({ plugin: 'env-guard', key: 'touch' } as const, null as Touch)
+const touchAtom = atom({ plugin: 'env-guard', key: 'touch' } as const, {} as Record<string, Touch>)
 
 const WIDE = 110
 
-const gateAtom = atom({ plugin: 'env-guard', key: 'gate' } as const, false)
+// Every session keeps its own readings: each value is a map keyed by the session id.
+async function sid($: any): Promise<string> {
+  try {
+    return String(await $.session.id())
+  } catch {
+    return 'main'
+  }
+}
+
+const gateAtom = atom({ plugin: 'env-guard', key: 'gate' } as const, {} as Record<string, boolean>)
 
 // The bars only show in a GitHub repository: true when the session's folder is inside a git
 // repository whose remote is on GitHub (any git repository when `githubOnly` is off).
@@ -23,7 +32,12 @@ async function inGithubRepo($: any, githubOnly: boolean): Promise<boolean> {
 
 async function checkGate($: any, githubOnly: boolean) {
   const ok = await inGithubRepo($, githubOnly)
-  await update($, gateAtom, p => (p === ok ? p : ok))
+  const id = await sid($)
+  await update($, gateAtom, p => (p[id] === ok ? p : { ...p, [id]: ok }))
+}
+
+async function gateOn($: any): Promise<boolean> {
+  return (await read($, gateAtom))[await sid($)] === true
 }
 
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
@@ -112,10 +126,11 @@ export const register: Register = (on, options) => {
     const hit = hitOf(e as Record<string, unknown>)
     if (hit) {
       const at = await $.clock.now()
-      await update($, touchAtom, () => ({ at, tool, hit }))
+      const id = await sid($)
+      await update($, touchAtom, p => ({ ...p, [id]: { at, tool, hit } }))
       $.ui.toast(`Production touched by ${tool} (matched "${hit}")`)
       // clear the red badge once the hold time has passed
-      $.clock.after(holdMs + 1000, () => update($, touchAtom, t => (t && t.at === at ? { ...t } : t)))
+      $.clock.after(holdMs + 1000, () => update($, touchAtom, p => (p[id] && p[id]!.at === at ? { ...p, [id]: { ...p[id]! } } : p)))
     }
     return next(e)
   })
@@ -124,11 +139,11 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
 
-    const touch = await read($, touchAtom)
+    const touch = (await read($, touchAtom))[await sid($)] ?? null
     const now = await $.clock.now()
     const isRed = touch !== null && now - touch.at < holdMs
     // The LOCAL badge only shows in a GitHub repository; a red PROD warning shows anywhere.
-    if (!isRed && !(await read($, gateAtom))) return below
+    if (!isRed && !(await gateOn($))) return below
 
     const { Box, Text } = $.ui.resolve(e)
     const zone = (
