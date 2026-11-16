@@ -52,6 +52,15 @@ function withKids(node: any, kids: any[]): any {
   return { ...node, children: kids }
 }
 
+// task-progress draws one combined dev row from this mod's readings when it is installed: this mod then draws nothing itself.
+async function claimed($: any): Promise<boolean> {
+  try {
+    return (await $.state.get({ plugin: 'task-progress', key: 'claim' } as const)).value === true
+  } catch {
+    return false
+  }
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -146,14 +155,10 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (await claimed($)) return below
     const repo = (await read($, repoAtom))[await sid($)] ?? null
     if (e.props.hasSurvey || !repo || !(await gateOn($))) return below
 
-    try {
-      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug.json', JSON.stringify(below, null, 1).slice(0, 6000))
-    } catch {
-      // debug only
-    }
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE
     const dirty = repo.changed > 0

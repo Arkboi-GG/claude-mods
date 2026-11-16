@@ -52,6 +52,15 @@ function withKids(node: any, kids: any[]): any {
   return { ...node, children: kids }
 }
 
+// task-progress draws one combined dev row from this mod's readings when it is installed: this mod then draws nothing itself.
+async function claimed($: any): Promise<boolean> {
+  try {
+    return (await $.state.get({ plugin: 'task-progress', key: 'claim' } as const)).value === true
+  } catch {
+    return false
+  }
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -141,7 +150,7 @@ export const register: Register = (on, options) => {
     if (hit) {
       const at = await $.clock.now()
       const id = await sid($)
-      await update($, touchAtom, p => ({ ...p, [id]: { at, tool, hit } }))
+      await update($, touchAtom, p => ({ ...p, [id]: { at, tool, hit, until: at + holdMs } }))
       $.ui.toast(`Production touched by ${tool} (matched "${hit}")`)
       // clear the red badge once the hold time has passed
       $.clock.after(holdMs + 1000, () => update($, touchAtom, p => (p[id] && p[id]!.at === at ? { ...p, [id]: { ...p[id]! } } : p)))
@@ -151,6 +160,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (await claimed($)) return below
     if (e.props.hasSurvey) return below
 
     const touch = (await read($, touchAtom))[await sid($)] ?? null
@@ -159,11 +169,6 @@ export const register: Register = (on, options) => {
     // The LOCAL badge only shows in a GitHub repository; a red PROD warning shows anywhere.
     if (!isRed && !(await gateOn($))) return below
 
-    try {
-      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug-env-guard.json', JSON.stringify(below, null, 1).slice(0, 6000))
-    } catch {
-      // debug only
-    }
     const { Box, Text } = $.ui.resolve(e)
     const zone = (
       <Box gap={1}>

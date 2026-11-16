@@ -18,6 +18,9 @@ async function sid($: any): Promise<string> {
   }
 }
 
+// Tells the dev mods that this mod draws their combined row, so they draw nothing themselves.
+const claim = atom({ plugin: 'task-progress', key: 'claim' } as const, false)
+
 const NO_USAGE: Usage = { context: null, limits: [] }
 
 async function getSteps($: any): Promise<Step[]> {
@@ -86,27 +89,107 @@ const applyPlan = (prev: Step[], e: Record<string, unknown>): Step[] => {
   return next
 }
 
-// A sibling mod's element by key ('devrow', 'agent-crabs'), found anywhere in what is beneath.
-// A node's children sit either beside its props or among them, by engine build: read and write both.
-function kidsOf(node: any): any[] {
-  const k = Array.isArray(node?.children) ? node.children : node?.props?.children
-  if (k === undefined || k === null) return []
-  return (Array.isArray(k) ? k : [k]).flat(Infinity).filter((x: any) => x !== null && x !== undefined && x !== false)
-}
+// The dev row: one wrapping line drawn from the readings of repo-status, stack-health, preflight and env-guard. The engine hands
+// every mod an opaque handle to what is beneath it, so those mods cannot share a row among themselves; this mod reads their
+// state (any plugin may read any value) and draws the row once. A mod that is not installed adds nothing.
+const WIDE = 110
+const STACK_COLORS = { up: '#22c55e', wait: '#f59e0b', down: '#ef4444' } as const
+const CHECK_GLYPH = { idle: '·', running: '…', pass: '✓', fail: '✗' } as const
+const CHECK_COLOR = { idle: '#6b7280', running: '#f59e0b', pass: '#22c55e', fail: '#ef4444' } as const
 
-function withKids(node: any, kids: any[]): any {
-  if (node?.children === undefined && node?.props && 'children' in node.props) return { ...node, props: { ...node.props, children: kids } }
-  return { ...node, children: kids }
-}
+async function devRow($: any, e: any): Promise<any> {
+  const id = await sid($)
+  const now = await $.clock.now()
+  const isWide = e.props.bodyColumns >= WIDE
+  const { Box, Text } = $.ui.resolve(e)
+  const zones: any[] = []
+  const zone = (key: string, node: any) => zones.push(<Box key={key} flexShrink={0}>{node}</Box>)
 
-function findKeyed(node: any, key: string): any {
-  if (!node || typeof node !== 'object') return null
-  if (node.props?.key === key || String(node.props?.key).endsWith(':' + key) || String(node.props?.key).endsWith('/' + key)) return node
-  for (const kid of kidsOf(node)) {
-    const hit = findKeyed(kid, key)
-    if (hit) return hit
+  try {
+    const gate = (await $.state.get({ plugin: 'repo-status', key: 'gate' } as const)).value?.[id] === true
+    const repo = (await $.state.get({ plugin: 'repo-status', key: 'repo' } as const)).value?.[id]
+    if (gate && repo) {
+      const dirty = repo.changed > 0
+      const prColor = repo.pr.includes('✗') ? '#ef4444' : repo.pr.includes('…') ? '#f59e0b' : '#22c55e'
+      zone('zone-1', (
+        <Box gap={2}>
+          <Text bold color="#a855f7">{repo.branch}</Text>
+          {repo.ahead > 0 || repo.behind > 0 || isWide ? <Text dimColor>↑{repo.ahead} ↓{repo.behind}</Text> : null}
+          <Text color={dirty ? '#f59e0b' : '#22c55e'}>{dirty ? `● ${repo.changed} changed` : '✓ clean'}</Text>
+          {repo.pr ? <Text color={prColor}>{isWide && repo.prLong ? `${repo.pr.split(' ').slice(0, 2).join(' ')} · ${repo.prLong}` : repo.pr}</Text> : null}
+        </Box>
+      ))
+    }
+  } catch {
+    // repo-status is not installed
   }
-  return null
+
+  try {
+    const gate = (await $.state.get({ plugin: 'stack-health', key: 'gate' } as const)).value?.[id] === true
+    const dots = (await $.state.get({ plugin: 'stack-health', key: 'dots' } as const)).value?.[id] ?? []
+    if (gate && dots.length > 0) {
+      zone('zone-2', (
+        <Box gap={2}>
+          {dots.map((d: any) => (
+            <Box key={d.name} gap={1}>
+              <Text color={STACK_COLORS[d.state as 'up' | 'wait' | 'down']}>●</Text>
+              <Text dimColor={d.state === 'up'}>{d.name}</Text>
+              {isWide && d.detail ? <Text dimColor>{d.detail}</Text> : null}
+            </Box>
+          ))}
+        </Box>
+      ))
+    }
+  } catch {
+    // stack-health is not installed
+  }
+
+  try {
+    const gate = (await $.state.get({ plugin: 'preflight', key: 'gate' } as const)).value?.[id] === true
+    const checks = (await $.state.get({ plugin: 'preflight', key: 'checks' } as const)).value?.[id] ?? []
+    if (gate && checks.length > 0) {
+      const clock = (at: number) => (at ? new Date(at).toTimeString().slice(0, 5) : '')
+      zone('zone-3', (
+        <Box gap={2}>
+          {checks.map((c: any) => (
+            <Box key={c.name} gap={1}>
+              <Text color={CHECK_COLOR[c.state as 'idle' | 'running' | 'pass' | 'fail']}>{CHECK_GLYPH[c.state as 'idle' | 'running' | 'pass' | 'fail']}</Text>
+              <Text dimColor={c.state === 'pass' || c.state === 'idle'}>{c.name}</Text>
+              {c.state === 'fail' ? <Text color="#ef4444">{c.issues}</Text> : null}
+              {c.state === 'idle' ? <Text dimColor>not run</Text> : null}
+              {isWide && c.at ? <Text dimColor>{clock(c.at)}</Text> : null}
+            </Box>
+          ))}
+        </Box>
+      ))
+    }
+  } catch {
+    // preflight is not installed
+  }
+
+  try {
+    const gate = (await $.state.get({ plugin: 'env-guard', key: 'gate' } as const)).value?.[id] === true
+    const touch = (await $.state.get({ plugin: 'env-guard', key: 'touch' } as const)).value?.[id] ?? null
+    const isRed = touch !== null && now < touch.until
+    // The LOCAL badge only shows in a GitHub repository; a red PROD warning shows anywhere.
+    if (isRed || gate) {
+      zone('zone-9', (
+        <Box gap={1}>
+          <Text color={isRed ? '#ef4444' : '#22c55e'} bold>{isRed ? '▲ PROD' : '● LOCAL'}</Text>
+          {isRed && touch ? <Text dimColor>{touch.tool} matched "{touch.hit}"</Text> : null}
+        </Box>
+      ))
+    }
+  } catch {
+    // env-guard is not installed
+  }
+
+  if (zones.length === 0) return null
+  return (
+    <Box key="devrow" paddingX={1} justifyContent="space-between" flexWrap="wrap" columnGap={3}>
+      {zones}
+    </Box>
+  )
 }
 
 // 'five_hour' -> '5h', 'seven_day' -> '7d'; any other window keeps its own name.
@@ -198,6 +281,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     $.ui.toast('task-progress loaded')
+    await update($, claim, () => true)
     try {
       await $.tool.register({
         name: STEPS_TOOL,
@@ -292,6 +376,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const list = await getSteps($)
+    const dev = e.props.hasSurvey ? null : await devRow($, e)
     // Only while Claude works: then the bar stands in for the other stats bands,
     // keeping just the dev row; when the turn ends they come back.
     if (e.props.hasSurvey) return below
@@ -313,7 +398,7 @@ export const register: Register = (on, options) => {
             <Text dimColor>usage: waiting for the first reading</Text>
           </Box>
         )
-        return below ? <Box flexDirection="column">{wait}{below}</Box> : wait
+        return <Box flexDirection="column">{wait}{below}{dev}</Box>
       }
       const rings = ringsSvg(meters, e.props.bodyColumns < 70, idleNow)
       // Wraps when the chat is too narrow for both, so the button drops below the rings
@@ -337,7 +422,7 @@ export const register: Register = (on, options) => {
           </Box>
         </Box>
       )
-      return below ? <Box flexDirection="column">{idle}{below}</Box> : idle
+      return <Box flexDirection="column">{idle}{below}{dev}</Box>
     }
 
     const { Box, Text, Svg } = $.ui.resolve(e)
@@ -402,9 +487,7 @@ export const register: Register = (on, options) => {
         <Text color={ORANGE}>×{list.length}</Text>
       </Box>
     )
-    // Keeps the dev row and the agent crabs (agent-crabs mod) while the other bands step aside.
-    const devrow = findKeyed(below, 'devrow')
-    const crabs = findKeyed(below, 'agent-crabs')
-    return devrow || crabs ? <Box flexDirection="column">{crabs}{row}{devrow}</Box> : row
+    // The agent crabs (agent-crabs mod) sit in what is beneath; the dev row closes the stack.
+    return <Box flexDirection="column">{below}{row}{dev}</Box>
   })
 }

@@ -9,6 +9,7 @@ export type Repo = {
 
 declare module 'claude-code' {
   interface PluginState {
+    'task-progress': { claim: boolean }
     'repo-status': { repo: Record<string, Repo | null>; gate: Record<string, boolean> }
   }
 }
