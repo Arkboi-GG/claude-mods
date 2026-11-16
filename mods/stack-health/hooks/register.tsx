@@ -158,6 +158,11 @@ export const register: Register = (on, options) => {
     const dots = (await read($, dotsAtom))[await sid($)] ?? []
     if (e.props.hasSurvey || dots.length === 0 || !(await gateOn($))) return below
 
+    try {
+      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug-stack-health.json', JSON.stringify(below, null, 1).slice(0, 6000))
+    } catch {
+      // debug only
+    }
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE
     const zone = (

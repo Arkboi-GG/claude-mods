@@ -159,6 +159,11 @@ export const register: Register = (on, options) => {
     // The LOCAL badge only shows in a GitHub repository; a red PROD warning shows anywhere.
     if (!isRed && !(await gateOn($))) return below
 
+    try {
+      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug-env-guard.json', JSON.stringify(below, null, 1).slice(0, 6000))
+    } catch {
+      // debug only
+    }
     const { Box, Text } = $.ui.resolve(e)
     const zone = (
       <Box gap={1}>

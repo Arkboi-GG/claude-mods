@@ -225,6 +225,11 @@ export const register: Register = (on, options) => {
     const checks = (await read($, checksAtom))[await sid($)] ?? []
     if (e.props.hasSurvey || checks.length === 0 || !(await gateOn($))) return below
 
+    try {
+      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug-preflight.json', JSON.stringify(below, null, 1).slice(0, 6000))
+    } catch {
+      // debug only
+    }
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE
     const clock = (at: number) => (at ? new Date(at).toTimeString().slice(0, 5) : '')
