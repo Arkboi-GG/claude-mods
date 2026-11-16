@@ -40,6 +40,18 @@ async function gateOn($: any): Promise<boolean> {
   return (await read($, gateAtom))[await sid($)] === true
 }
 
+// A node's children sit either beside its props or among them, by engine build: read and write both.
+function kidsOf(node: any): any[] {
+  const k = Array.isArray(node?.children) ? node.children : node?.props?.children
+  if (k === undefined || k === null) return []
+  return (Array.isArray(k) ? k : [k]).flat(Infinity).filter((x: any) => x !== null && x !== undefined && x !== false)
+}
+
+function withKids(node: any, kids: any[]): any {
+  if (node?.children === undefined && node?.props && 'children' in node.props) return { ...node, props: { ...node.props, children: kids } }
+  return { ...node, children: kids }
+}
+
 // Shared "dev row" protocol (the same helper sits in every mod of this repo):
 // each mod adds a keyed zone to one row, so the mods fill a single line together
 // and still work alone. Zones sort by their key, `zone-<order>`.
@@ -48,11 +60,11 @@ function addZone(below: any, zone: any, order: number): any {
   const byKey = (a: any, b: any) => String(a?.props?.key).localeCompare(String(b?.props?.key))
   const merge = (node: any): any => {
     if (!node || typeof node !== 'object') return null
-    if (node.props?.key === 'devrow') return { ...node, children: [...(node.children ?? []), tagged].sort(byKey) }
-    const kids: any[] = node.children ?? []
+    if (node.props?.key === 'devrow') return withKids(node, [...kidsOf(node), tagged].sort(byKey))
+    const kids: any[] = kidsOf(node)
     for (let i = 0; i < kids.length; i++) {
       const hit = merge(kids[i])
-      if (hit) return { ...node, children: kids.map((k, j) => (j === i ? hit : k)) }
+      if (hit) return withKids(node, kids.map((k, j) => (j === i ? hit : k)))
     }
     return null
   }

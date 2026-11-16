@@ -87,10 +87,22 @@ const applyPlan = (prev: Step[], e: Record<string, unknown>): Step[] => {
 }
 
 // A sibling mod's element by key ('devrow', 'agent-crabs'), found anywhere in what is beneath.
+// A node's children sit either beside its props or among them, by engine build: read and write both.
+function kidsOf(node: any): any[] {
+  const k = Array.isArray(node?.children) ? node.children : node?.props?.children
+  if (k === undefined || k === null) return []
+  return (Array.isArray(k) ? k : [k]).flat(Infinity).filter((x: any) => x !== null && x !== undefined && x !== false)
+}
+
+function withKids(node: any, kids: any[]): any {
+  if (node?.children === undefined && node?.props && 'children' in node.props) return { ...node, props: { ...node.props, children: kids } }
+  return { ...node, children: kids }
+}
+
 function findKeyed(node: any, key: string): any {
   if (!node || typeof node !== 'object') return null
   if (node.props?.key === key) return node
-  for (const kid of node.children ?? []) {
+  for (const kid of kidsOf(node)) {
     const hit = findKeyed(kid, key)
     if (hit) return hit
   }
