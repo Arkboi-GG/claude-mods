@@ -101,7 +101,7 @@ function withKids(node: any, kids: any[]): any {
 
 function findKeyed(node: any, key: string): any {
   if (!node || typeof node !== 'object') return null
-  if (node.props?.key === key) return node
+  if (node.props?.key === key || String(node.props?.key).endsWith(':' + key) || String(node.props?.key).endsWith('/' + key)) return node
   for (const kid of kidsOf(node)) {
     const hit = findKeyed(kid, key)
     if (hit) return hit

@@ -57,10 +57,12 @@ function withKids(node: any, kids: any[]): any {
 // and still work alone. Zones sort by their key, `zone-<order>`.
 function addZone(below: any, zone: any, order: number): any {
   const tagged = { ...zone, props: { ...zone.props, key: `zone-${order}`, flexShrink: 0 } }
-  const byKey = (a: any, b: any) => String(a?.props?.key).localeCompare(String(b?.props?.key))
+  // The engine may prefix a key with the plugin's name: match the ending, sort on the number.
+  const rank = (n: any) => Number(/zone-(d+)$/.exec(String(n?.props?.key))?.[1] ?? 99)
+  const byKey = (a: any, b: any) => rank(a) - rank(b)
   const merge = (node: any): any => {
     if (!node || typeof node !== 'object') return null
-    if (node.props?.key === 'devrow') return withKids(node, [...kidsOf(node), tagged].sort(byKey))
+    if (/(^|[^a-z])devrow$/.test(String(node.props?.key))) return withKids(node, [...kidsOf(node), tagged].sort(byKey))
     const kids: any[] = kidsOf(node)
     for (let i = 0; i < kids.length; i++) {
       const hit = merge(kids[i])
@@ -147,6 +149,11 @@ export const register: Register = (on, options) => {
     const repo = (await read($, repoAtom))[await sid($)] ?? null
     if (e.props.hasSurvey || !repo || !(await gateOn($))) return below
 
+    try {
+      await $.fs.write('C:/Users/Panos/AppData/Local/Temp/claude/devrow-debug.json', JSON.stringify(below, null, 1).slice(0, 6000))
+    } catch {
+      // debug only
+    }
     const { Box, Text } = $.ui.resolve(e)
     const isWide = e.props.bodyColumns >= WIDE
     const dirty = repo.changed > 0
